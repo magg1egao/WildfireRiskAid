@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Wildfire Risk Assessment{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.css">
+    <style>
+        
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Horizontal navbar replacing the sidebar -->
+        <nav class="top-navbar">
+            <a href="{{ url_for('home') }}" class="navbar-brand">
+                <div class="brand-title">
+                    <h1><span class="fire-text">FIRE</span><span class="sight-text">SIGHT</span></h1>
+                </div>
+            </a>
+            
+            <ul class="nav-menu">
+                <li><a href="{{ url_for('home') }}" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
+                <li><a href="{{ url_for('upload') }}"><i class="fas fa-upload"></i> Upload Data</a></li>
+                <li><a href="#"><i class="fas fa-map-marked-alt"></i> Analysis Zones</a></li>
+                <li><a href="#"><i class="fas fa-chart-line"></i> Risk Assessment</a></li>
+                <li><a href="#"><i class="fas fa-fire"></i> Simulations</a></li>
+                <li><a href="#"><i class="fas fa-cog"></i> Settings</a></li>
+            </ul>
+            
+            <div class="system-info">
+                <div class="status-indicator">
+                    <span class="risk-icon risk-medium"></span>
+                    <span>Offline Mode</span>
+                </div>
+                <div class="status-indicator">
+                    <i class="fas fa-battery-three-quarters text-success"></i>
+                    <span>75%</span>
+                </div>
+                <div class="status-indicator">
+                    <i class="fas fa-hdd text-info"></i>
+                    <span>14.2GB free</span>
+                </div>
+            </div>
+        </nav>
+        
+        <main class="content">
+            <div class="content-body">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

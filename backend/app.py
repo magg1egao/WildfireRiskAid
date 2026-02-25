@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from transformers import pipeline
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -16,12 +17,9 @@ import pandas as pd
 # load env variables
 load_dotenv()
 
-# get absolute path to the templates directory
-template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
-static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
-
 # initialize Flask
-app = Flask(__name__, static_folder=static_dir, template_folder=template_dir)
+app = Flask(__name__)
+CORS(app)
 
 # Initialize GPT4ALL
 model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf")
@@ -337,62 +335,6 @@ class PredictionResult(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
 ################### ROUTES ###################
-@app.route('/')
-def home():
-    return render_template('index.html')
-
-@app.route('/upload', methods=['GET', 'POST'])
-def upload():
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            return jsonify({"error": "No file part"})
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"error": "No selected file"})
-        if file:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-
-            # Load the CSV data
-            df = pd.read_csv(filepath)
-
-            # Ensure required columns are present
-            required_columns = ['NDVI', 'NBR', 'NDWI', 'Temp', 'Wind_Dir', 'Wind_Spd', 'Humidity', 'Elev', 'Slope', 'Latitude', 'Longitude']
-            if not all(col in df.columns for col in required_columns):
-                return jsonify({"error": "Missing required columns in CSV"})
-
-            # Predict wildfire probability
-            features = df[required_columns]
-            wildfire_probabilities = xgb_model.predict_proba(features)[:, 1]  # Get probability of wildfire
-            df['Wildfire_Probability'] = wildfire_probabilities
-
-            # Analyze data with GPT-4All
-            gpt_analysis = analyze_with_gpt4all(df)
-            
-            # Store prediction results in database
-            prediction_data = {
-                'num_locations': len(df),
-                'avg_probability': float(np.mean(wildfire_probabilities)),
-                'max_probability': float(np.max(wildfire_probabilities)),
-                'high_risk_locations': int(np.sum(wildfire_probabilities > 0.7))
-            }
-            
-            new_prediction = PredictionResult(
-                filename=filename,
-                prediction_data=prediction_data,
-                analysis_summary=gpt_analysis[:500]  # Store a truncated version of the analysis
-            )
-            db.session.add(new_prediction)
-            db.session.commit()
-
-            # Return results
-            return jsonify({
-                "wildfire_predictions": df.to_dict(orient='records'),
-                "gpt_analysis": gpt_analysis,
-                "prediction_id": new_prediction.prediction_id
-            })
-    return render_template('upload.html')
 
 @app.route('/upload/csv', methods=['POST'])
 def upload_csv():
@@ -513,16 +455,6 @@ def upload_csv():
 
     return jsonify({"error": "Failed to process file"})
 
-@app.route('/predictions', methods=['GET'])
-def view_predictions():
-    predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).all()
-    return render_template('predictions.html', predictions=predictions)
-
-@app.route('/predictions/<int:prediction_id>', methods=['GET'])
-def prediction_details(prediction_id):
-    prediction = PredictionResult.query.get_or_404(prediction_id)
-    return render_template('prediction_details.html', prediction=prediction)
-
 @app.route('/api/predictions', methods=['GET'])
 def get_predictions():
     predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).all()
@@ -533,11 +465,6 @@ def get_predictions():
         'avg_probability': p.prediction_data.get('avg_probability'),
         'high_risk_locations': p.prediction_data.get('high_risk_locations')
     } for p in predictions])
-
-@app.route('/analyze/<int:stats_id>')
-def analyze(stats_id):
-    stats = SatelliteImageStats.query.get_or_404(stats_id)
-    return render_template('analysis.html', stats=stats)
 
 # API Routes
 @app.route('/api/stats', methods=['GET'])

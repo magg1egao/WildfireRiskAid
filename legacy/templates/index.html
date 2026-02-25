@@ -1,0 +1,635 @@
+{% extends "layout.html" %}
+
+{% block title %}FireSight - Wildfire Risk Dashboard{% endblock %}
+{% block header %}Wildfire Risk Command Center{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Top stats strip -->
+    <div class="stats-strip mb-md">
+        <div class="stat-item">
+            <div class="stat-label">Risk Level</div>
+            <div class="stat-value danger">High</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+            <div class="stat-label">Active Alerts</div>
+            <div class="stat-value">3</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+            <div class="stat-label">Average NDVI</div>
+            <div class="stat-value warning">0.52</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+            <div class="stat-label">Current Wind</div>
+            <div class="stat-value">12 mph</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+            <div class="stat-label">Last Updated</div>
+            <div class="stat-value text-muted">March 22, 08:45 AM</div>
+        </div>
+    </div>
+
+    <!-- Main content grid -->
+    <div class="dashboard-grid">
+        <!-- Map panel -->
+        <div class="panel panel-main">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i class="fas fa-map-marked-alt"></i>
+                    Risk Assessment Map
+                </div>
+                <div class="panel-actions">
+                    <select class="form-select compact" id="mapLayerSelect">
+                        <option value="risk">Risk Assessment</option>
+                        <option value="ndvi">NDVI (Vegetation)</option>
+                        <option value="nbr">NBR (Burn Ratio)</option>
+                        <option value="terrain">Terrain</option>
+                    </select>
+                </div>
+            </div>
+            <div class="panel-body no-padding">
+                <div id="mapContainer" class="map-container">
+                    <div class="map-legend">
+                        <div class="legend-title">Risk Levels</div>
+                        <div class="legend-items">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: var(--risk-critical);"></div>
+                                <div class="legend-label">Critical (>80%)</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: var(--risk-high);"></div>
+                                <div class="legend-label">High (60-80%)</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: var(--risk-medium);"></div>
+                                <div class="legend-label">Medium (40-60%)</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: var(--risk-low);"></div>
+                                <div class="legend-label">Low (<40%)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical alerts panel -->
+        <div class="panel panel-danger">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Critical Alerts
+                </div>
+                <div class="panel-actions">
+                    <button class="btn btn-text">View All</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="alert-list">
+                    <div class="alert-item critical pulse">
+                        <div class="alert-header">
+                            <div class="alert-title">
+                                Northridge Canyon
+                                <span class="alert-severity critical">Critical (89%)</span>
+                            </div>
+                            <div class="alert-actions">
+                                <button class="btn btn-sm btn-danger">Deploy Resources</button>
+                            </div>
+                        </div>
+                        <div class="alert-details">
+                            Extreme dry conditions, increasing winds, and declining vegetation health (NDVI: 0.37)
+                        </div>
+                    </div>
+                    <div class="alert-item high">
+                        <div class="alert-header">
+                            <div class="alert-title">
+                                Eastern Foothills
+                                <span class="alert-severity high">High (72%)</span>
+                            </div>
+                            <div class="alert-actions">
+                                <button class="btn btn-sm btn-warning">Monitor</button>
+                            </div>
+                        </div>
+                        <div class="alert-details">
+                            Decreasing moisture levels, temperatures expected to rise to 92°F today
+                        </div>
+                    </div>
+                    <div class="alert-item high">
+                        <div class="alert-header">
+                            <div class="alert-title">
+                                Pine Ridge Forest
+                                <span class="alert-severity high">High (68%)</span>
+                            </div>
+                            <div class="alert-actions">
+                                <button class="btn btn-sm btn-warning">Monitor</button>
+                            </div>
+                        </div>
+                        <div class="alert-details">
+                            Limited access routes, dense vegetation with declining moisture content
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indices trending panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i class="fas fa-chart-line"></i>
+                    Vegetation & Moisture Trends
+                </div>
+                <div class="panel-actions">
+                    <select class="form-select compact" id="indexTimeRange">
+                        <option value="7">Last 7 Days</option>
+                        <option value="30">Last 30 Days</option>
+                        <option value="90">Last 90 Days</option>
+                    </select>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-container">
+                    <canvas id="indicesChart"></canvas>
+                </div>
+                <div class="index-summary">
+                    <div class="index-stat declining">
+                        <div class="index-label">NDVI</div>
+                        <div class="index-value">0.52</div>
+                        <div class="index-change negative">-18.8% in 7 days</div>
+                    </div>
+                    <div class="index-stat declining">
+                        <div class="index-label">NBR</div>
+                        <div class="index-value">0.18</div>
+                        <div class="index-change negative">-43.8% in 7 days</div>
+                    </div>
+                    <div class="index-stat declining">
+                        <div class="index-label">NDWI</div>
+                        <div class="index-value">0.28</div>
+                        <div class="index-change negative">-31.7% in 7 days</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Assistant panel -->
+    <div class="panel panel-dark">
+        <div class="panel-header">
+            <div class="panel-title">
+                <i class="fas fa-robot"></i>
+                FireSight AI Assistant
+            </div>
+            <div class="panel-actions">
+                <button class="btn btn-sm btn-outline-light">
+                    <i class="fas fa-history"></i>
+                    <span class="hide-mobile">History</span>
+                </button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="chatbot-container">
+                <div class="chatbot-messages">
+                    <div class="chatbot-message system">
+                        <div class="chatbot-message-content">
+                            <p>Welcome to FireSight AI Assistant. How can I help with your wildfire assessment today?</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="chatbot-footer">
+                    <input type="text" id="chatInput" class="chatbot-input" placeholder="Ask about wildfire risks, terrain analysis, or request summaries...">
+                    <button id="sendChatBtn" class="chatbot-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize map
+    const map = L.map('mapContainer').setView([34.052, -118.243], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Add some example data polygons
+    const zones = [
+        { name: "Northridge Canyon", coords: [[34.2, -118.5], [34.3, -118.5], [34.3, -118.4], [34.2, -118.4]], risk: "critical" },
+        { name: "Eastern Foothills", coords: [[34.1, -118.2], [34.2, -118.2], [34.2, -118.1], [34.1, -118.1]], risk: "high" },
+        { name: "Pine Ridge Forest", coords: [[34.0, -118.3], [34.1, -118.3], [34.1, -118.2], [34.0, -118.2]], risk: "high" },
+        { name: "Valley Grasslands", coords: [[33.9, -118.4], [34.0, -118.4], [34.0, -118.3], [33.9, -118.3]], risk: "medium" }
+    ];
+
+    zones.forEach(zone => {
+        let color;
+        switch(zone.risk) {
+            case "critical": color = "var(--risk-critical)"; break;
+            case "high": color = "var(--risk-high)"; break;
+            case "medium": color = "var(--risk-medium)"; break;
+            default: color = "var(--risk-low)";
+        }
+        
+        L.polygon(zone.coords, {
+            color: color,
+            fillOpacity: 0.7,
+            weight: 2
+        }).bindPopup(`
+            <div class="map-popup">
+                <div class="popup-title">${zone.name}</div>
+                <div class="popup-risk ${zone.risk}">Risk: ${zone.risk}</div>
+                <div class="popup-details">
+                    <div class="popup-detail">
+                        <span class="detail-label">NDVI:</span>
+                        <span class="detail-value">0.52</span>
+                    </div>
+                    <div class="popup-detail">
+                        <span class="detail-label">Terrain:</span>
+                        <span class="detail-value">Canyon</span>
+                    </div>
+                    <div class="popup-detail">
+                        <span class="detail-label">Vegetation:</span>
+                        <span class="detail-value">Dense</span>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-primary w-100">View Details</button>
+            </div>
+        `).addTo(map);
+    });
+
+    // Initialize chart
+    const ctx = document.getElementById('indicesChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['Mar 16', 'Mar 17', 'Mar 18', 'Mar 19', 'Mar 20', 'Mar 21', 'Mar 22'],
+            datasets: [{
+                label: 'NDVI',
+                borderColor: 'var(--vegetation-green)',
+                backgroundColor: 'rgba(45, 71, 57, 0.1)',
+                data: [0.65, 0.64, 0.62, 0.59, 0.57, 0.54, 0.52],
+                tension: 0.3,
+                fill: true
+            }, {
+                label: 'NBR',
+                borderColor: 'var(--danger)',
+                backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                data: [0.32, 0.31, 0.30, 0.28, 0.25, 0.21, 0.18],
+                tension: 0.3,
+                fill: true
+            }, {
+                label: 'NDWI',
+                borderColor: 'var(--water-blue)',
+                backgroundColor: 'rgba(2, 136, 209, 0.1)',
+                data: [0.41, 0.40, 0.38, 0.35, 0.32, 0.30, 0.28],
+                tension: 0.3,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        boxWidth: 12,
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(38, 50, 56, 0.9)',
+                    titleFont: {
+                        size: 14,
+                        weight: 'bold'
+                    },
+                    bodyFont: {
+                        size: 13
+                    },
+                    padding: 12,
+                    cornerRadius: 4
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    min: 0,
+                    max: 1,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            },
+            elements: {
+                point: {
+                    radius: 3,
+                    hoverRadius: 5
+                }
+            }
+        }
+    });
+
+    // AI Assistant feature
+    document.addEventListener('DOMContentLoaded', function() {
+        const chatInput = document.getElementById('chatInput');
+        const sendChatBtn = document.getElementById('sendChatBtn');
+        const messagesContainer = document.querySelector('.chatbot-messages');
+        
+        // Function to add message to chat
+        function addMessage(text, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chatbot-message ${isUser ? 'user' : 'system'}`;
+            
+            // Process markdown in system messages (e.g., for summaries)
+            if (!isUser) {
+                // Convert line breaks to paragraphs
+                const paragraphs = text.split('\n\n').filter(p => p.trim() !== '');
+                const processedText = paragraphs.map(p => {
+                    // Handle lists
+                    if (p.includes('- ')) {
+                        const listItems = p.split('\n').map(line => {
+                            if (line.startsWith('- ')) {
+                                return `<li>${line.substring(2)}</li>`;
+                            }
+                            return `<p>${line}</p>`;
+                        }).join('');
+                        return `<ul>${listItems}</ul>`;
+                    }
+                    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+                }).join('');
+                
+                messageDiv.innerHTML = `<div class="chatbot-message-content">${processedText}</div>`;
+            } else {
+                messageDiv.innerHTML = `<div class="chatbot-message-content"><p>${text}</p></div>`;
+            }
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Function to send chat message
+        function sendChatMessage() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            
+            // Add user message to chat
+            addMessage(text, true);
+            
+            // Clear input
+            chatInput.value = '';
+            
+            // Show typing indicator
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'chatbot-message system typing';
+            typingIndicator.innerHTML = '<div class="chatbot-message-content"><p>FireSight AI is thinking...</p></div>';
+            messagesContainer.appendChild(typingIndicator);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            // Get current context data
+            const currentMapLayer = document.getElementById('mapLayerSelect')?.value || 'risk';
+            const currentTimeRange = document.getElementById('indexTimeRange')?.value || '7';
+            
+            // Determine if we're looking at a specific zone
+            let context = {
+                mapLayer: currentMapLayer,
+                timeRange: currentTimeRange
+            };
+            
+            // Get visible panels to provide context
+            const activePanels = Array.from(document.querySelectorAll('.panel'))
+                .filter(panel => panel.style.display !== 'none')
+                .map(panel => panel.querySelector('.panel-title')?.textContent?.trim());
+            
+            if (activePanels.length > 0) {
+                context.activePanels = activePanels;
+            }
+            
+            // Send the request to our API
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    query: text,
+                    context_type: currentMapLayer,
+                    context_id: null, // In a real app, you'd get the ID of the currently selected zone/stat
+                    user_context: context
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove typing indicator
+                messagesContainer.removeChild(typingIndicator);
+                
+                // Add AI response
+                addMessage(data.answer);
+                
+                // If response contains actionable data, offer quick actions
+                if (data.answer.toLowerCase().includes('risk') && data.answer.toLowerCase().includes('high')) {
+                    addQuickActionButtons(['View Risk Details', 'Show on Map', 'Deploy Resources']);
+                } else if (data.answer.toLowerCase().includes('vegetation') || data.answer.toLowerCase().includes('ndvi')) {
+                    addQuickActionButtons(['View NDVI Trends', 'Analyze Vegetation']);
+                }
+            })
+            .catch(error => {
+                // Remove typing indicator
+                messagesContainer.removeChild(typingIndicator);
+                
+                // Add error message
+                addMessage('Sorry, I encountered an error processing your request. Please try again.');
+                console.error('Chat error:', error);
+            });
+        }
+        
+        // Function to add quick action buttons
+        function addQuickActionButtons(actions) {
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'chatbot-quick-actions';
+            
+            actions.forEach(action => {
+                const button = document.createElement('button');
+                button.className = 'btn btn-sm btn-outline-primary quick-action';
+                button.textContent = action;
+                button.addEventListener('click', () => {
+                    // Handle quick action click
+                    addMessage(action, true);
+                    
+                    // For demonstration, we'll make the AI respond to the action
+                    let response;
+                    if (action === 'View Risk Details') {
+                        response = "Here's a detailed breakdown of the risk factors:\n\n- Vegetation dryness: 72% (High)\n- Wind conditions: 12 mph from NE (Moderate)\n- Terrain factor: Canyon (Critical)\n- Historical fire data: Previous fire 8 years ago\n\nOverall risk assessment: HIGH (72%)";
+                    } else if (action === 'Show on Map') {
+                        response = "I've highlighted the high-risk areas on the map. The Eastern Foothills and Pine Ridge Forest are showing concerning conditions.";
+                        // In a real implementation, you would highlight these areas on the map
+                        highlightMapAreas(['Eastern Foothills', 'Pine Ridge Forest']);
+                    } else if (action === 'View NDVI Trends') {
+                        response = "NDVI trends over the past 7 days show a concerning decline of 18.8%.\n\nThis rapid vegetation stress indicates increasing fire risk, especially in the Northridge Canyon area.";
+                    }
+                    
+                    // Add AI response
+                    setTimeout(() => {
+                        addMessage(response);
+                    }, 600);
+                });
+                
+                buttonsDiv.appendChild(button);
+            });
+            
+            messagesContainer.appendChild(buttonsDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Function to highlight areas on the map (stub)
+        function highlightMapAreas(areaNames) {
+            console.log('Highlighting areas:', areaNames);
+            // In a real implementation, this would interact with your Leaflet map
+            // For example:
+            // zones.forEach(zone => {
+            //     if (areaNames.includes(zone.name)) {
+            //         zone.setStyle({ weight: 4, color: '#FF0000', fillOpacity: 0.7 });
+            //     }
+            // });
+        }
+        
+        // Add suggestion chips
+        function addSuggestionChips() {
+            const suggestionsDiv = document.createElement('div');
+            suggestionsDiv.className = 'chatbot-suggestions';
+            
+            const suggestions = [
+                'Summarize current risks',
+                'Analyze vegetation health',
+                'Weather forecast impact',
+                'Show critical zones'
+            ];
+            
+            suggestions.forEach(suggestion => {
+                const chip = document.createElement('button');
+                chip.className = 'suggestion-chip';
+                chip.textContent = suggestion;
+                chip.addEventListener('click', () => {
+                    chatInput.value = suggestion;
+                    sendChatMessage();
+                });
+                
+                suggestionsDiv.appendChild(chip);
+            });
+            
+            // Add the suggestions after the initial welcome message
+            const firstMessage = messagesContainer.querySelector('.chatbot-message');
+            if (firstMessage) {
+                messagesContainer.insertBefore(suggestionsDiv, firstMessage.nextSibling);
+            } else {
+                messagesContainer.appendChild(suggestionsDiv);
+            }
+        }
+        
+        // Event listeners
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        });
+        
+        // Add suggestions when page loads
+        addSuggestionChips();
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if there's a GPT analysis in localStorage
+        const gptAnalysis = localStorage.getItem('firesight_gpt_analysis');
+        
+        if (gptAnalysis) {
+            // Get the actual chat messages container from your HTML
+            const messagesContainer = document.querySelector('.chatbot-messages');
+            
+            if (messagesContainer) {
+                // Add the analysis as a system message
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'chatbot-message system';
+                
+                // Process the analysis text with proper formatting
+                const paragraphs = gptAnalysis.split('\n\n').filter(p => p.trim() !== '');
+                const processedText = paragraphs.map(p => {
+                    // Handle lists
+                    if (p.includes('- ')) {
+                        const listItems = p.split('\n').map(line => {
+                            if (line.startsWith('- ')) {
+                                return `<li>${line.substring(2)}</li>`;
+                            }
+                            return `<p>${line}</p>`;
+                        }).join('');
+                        return `<ul>${listItems}</ul>`;
+                    }
+                    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+                }).join('');
+                
+                messageDiv.innerHTML = `
+                    <div class="chatbot-message-content">
+                        <p><strong>📊 Analysis of Uploaded Data:</strong></p>
+                        ${processedText}
+                    </div>
+                `;
+                
+                // Add to chat
+                messagesContainer.appendChild(messageDiv);
+                
+                // Scroll to show the new message
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            // Clear the stored analysis so it doesn't appear again on page refresh
+            localStorage.removeItem('firesight_gpt_analysis');
+        }
+    });
+
+    // Allow sending message with Enter key
+    document.getElementById('chatInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('sendChatBtn').click();
+        }
+    });
+
+    // Layer selector change event
+    document.getElementById('mapLayerSelect').addEventListener('change', function() {
+        const selectedValue = this.value;
+        // In a real implementation, you would switch the map layers here
+        console.log(`Map layer changed to: ${selectedValue}`);
+    });
+
+    // Time range selector change event
+    document.getElementById('indexTimeRange').addEventListener('change', function() {
+        const selectedValue = this.value;
+        // In a real implementation, you would update the chart data here
+        console.log(`Time range changed to: ${selectedValue} days`);
+    });
+
+    // Band selector functionality
+    document.querySelectorAll('.band-pill').forEach(pill => {
+        pill.addEventListener('click', function() {
+            document.querySelectorAll('.band-pill').forEach(p => p.classList.remove('active'));
+            this.classList.add('active');
+            // In a real implementation, you would switch the image band here
+            console.log(`Image band changed to: ${this.textContent}`);
+        });
+    });
+</script>
+{% endblock %}

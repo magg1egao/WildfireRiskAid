@@ -1,0 +1,460 @@
+{% extends "layout.html" %}
+
+{% block title %}Analysis - Wildfire Risk Assessment{% endblock %}
+{% block header %}Satellite Image Analysis{% endblock %}
+
+{% block content %}
+<div class="analysis-container">
+    <div class="analysis-toolbar">
+        <div class="image-selector">
+            <label for="imageSelect">Satellite Image:</label>
+            <select id="imageSelect" class="form-select">
+                <option value="{{ image.image_id }}">{{ image.image_name }} ({{ image.acquisition_date.strftime('%Y-%m-%d') }})</option>
+                <option value="0">Load Different Image...</option>
+            </select>
+        </div>
+        <div class="layer-controls">
+            <label>Layers:</label>
+            <div class="layer-toggles">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="ndviToggle" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">NDVI</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="nbrToggle">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">NBR</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="riskToggle">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">Risk</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="zonesToggle" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">Zones</span>
+                </label>
+            </div>
+        </div>
+        <div class="analysis-actions">
+            <button class="btn btn-primary" id="runAnalysisBtn">
+                <i class="fas fa-play"></i> Run Analysis
+            </button>
+            <button class="btn btn-outline" id="exportBtn">
+                <i class="fas fa-download"></i> Export
+            </button>
+        </div>
+    </div>
+
+    <div class="analysis-content">
+        <div class="analysis-map-container">
+            <div id="analysisMap" class="analysis-map"></div>
+            <div class="map-legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(to right, #d73027, #fc8d59, #fee08b, #d9ef8b, #91cf60, #1a9850);"></div>
+                    <div class="legend-labels">
+                        <span>Low</span>
+                        <span>High</span>
+                    </div>
+                    <div class="legend-title">NDVI (Vegetation Health)</div>
+                </div>
+            </div>
+            <div class="map-tools">
+                <button class="btn btn-icon" title="Zoom In">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button class="btn btn-icon" title="Zoom Out">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <button class="btn btn-icon" title="Draw Region">
+                    <i class="fas fa-draw-polygon"></i>
+                </button>
+                <button class="btn btn-icon" title="Measure">
+                    <i class="fas fa-ruler"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="analysis-sidebar">
+            <div class="card analysis-details">
+                <div class="card-header">
+                    <h3>Image Details</h3>
+                </div>
+                <div class="card-body">
+                    <div class="detail-item">
+                        <span class="detail-label">Date:</span>
+                        <span class="detail-value">{{ image.acquisition_date.strftime('%Y-%m-%d') }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Sensor:</span>
+                        <span class="detail-value">{{ image.sensor_type }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Resolution:</span>
+                        <span class="detail-value">{{ image.resolution }}m</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Cloud Cover:</span>
+                        <span class="detail-value">{{ image.cloud_cover_percentage }}%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card spectral-analysis">
+                <div class="card-header">
+                    <h3>Spectral Analysis</h3>
+                    <select id="analysisZoneSelect" class="form-select">
+                        <option value="all">All Zones</option>
+                        <option value="northridge">Northridge Canyon</option>
+                        <option value="eastern">Eastern Foothills</option>
+                        <option value="pine">Pine Ridge Forest</option>
+                        <option value="valley">Valley Grasslands</option>
+                    </select>
+                </div>
+                <div class="card-body">
+                    <div class="indices-grid">
+                        <div class="index-card">
+                            <div class="index-header">
+                                <h4>NDVI</h4>
+                                <div class="index-value high">0.52</div>
+                            </div>
+                            <div class="index-description">
+                                <p>Vegetation health indicator. Values below 0.6 indicate dry, stressed vegetation.</p>
+                            </div>
+                            <div class="index-trend">
+                                <span class="trend-label">Trend:</span>
+                                <span class="trend-value negative">
+                                    <i class="fas fa-arrow-down"></i> -5.8%
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="index-card">
+                            <div class="index-header">
+                                <h4>NBR</h4>
+                                <div class="index-value medium">0.18</div>
+                            </div>
+                            <div class="index-description">
+                                <p>Burn ratio indicator. Low values (0.1-0.2) suggest potential fire risk.</p>
+                            </div>
+                            <div class="index-trend">
+                                <span class="trend-label">Trend:</span>
+                                <span class="trend-value negative">
+                                    <i class="fas fa-arrow-down"></i> -14.3%
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="index-card">
+                            <div class="index-header">
+                                <h4>NDWI</h4>
+                                <div class="index-value medium">0.28</div>
+                            </div>
+                            <div class="index-description">
+                                <p>Water content in vegetation. Low values indicate dryer conditions.</p>
+                            </div>
+                            <div class="index-trend">
+                                <span class="trend-label">Trend:</span>
+                                <span class="trend-value negative">
+                                    <i class="fas fa-arrow-down"></i> -6.7%
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="index-card">
+                            <div class="index-header">
+                                <h4>EVI</h4>
+                                <div class="index-value medium">0.31</div>
+                            </div>
+                            <div class="index-description">
+                                <p>Enhanced vegetation index, less sensitive to atmospheric conditions.</p>
+                            </div>
+                            <div class="index-trend">
+                                <span class="trend-label">Trend:</span>
+                                <span class="trend-value negative">
+                                    <i class="fas fa-arrow-down"></i> -4.9%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card risk-assessment">
+                <div class="card-header">
+                    <h3>Risk Assessment</h3>
+                </div>
+                <div class="card-body">
+                    <div class="risk-summary">
+                        <div class="risk-indicator critical">
+                            <div class="risk-level">Critical Risk</div>
+                            <div class="risk-score">89/100</div>
+                        </div>
+                        <div class="risk-factors">
+                            <h4>Contributing Factors:</h4>
+                            <ul>
+                                <li><strong>Very low vegetation moisture</strong> (NDWI: 0.28)</li>
+                                <li><strong>Declining vegetation health</strong> (NDVI: 0.52)</li>
+                                <li><strong>High temperatures</strong> (92°F forecast)</li>
+                                <li><strong>Low humidity</strong> (15%)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="action-recommendations">
+                        <h4>Recommended Actions:</h4>
+                        <ul>
+                            <li>Increase patrols in Northridge Canyon area</li>
+                            <li>Pre-position resources near high-risk zones</li>
+                            <li>Monitor weather conditions hourly</li>
+                            <li>Alert local authorities about elevated risk</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="confidence-level">
+                        <span class="confidence-label">Model Confidence:</span>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: 85%;"></div>
+                        </div>
+                        <span class="confidence-value">85%</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary" id="runSimulationBtn">
+                        <i class="fas fa-fire"></i> Run Fire Simulation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="simulationModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Fire Spread Simulation</h3>
+            <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="simulation-parameters">
+                <div class="parameter-group">
+                    <h4>Weather Parameters</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="simWindSpeed">Wind Speed (mph)</label>
+                            <input type="number" id="simWindSpeed" class="form-input" value="12">
+                        </div>
+                        <div class="form-group">
+                            <label for="simWindDirection">Wind Direction</label>
+                            <select id="simWindDirection" class="form-select">
+                                <option value="N">North</option>
+                                <option value="NE">Northeast</option>
+                                <option value="E" selected>East</option>
+                                <option value="SE">Southeast</option>
+                                <option value="S">South</option>
+                                <option value="SW">Southwest</option>
+                                <option value="W">West</option>
+                                <option value="NW">Northwest</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="simTemperature">Temperature (°F)</label>
+                            <input type="number" id="simTemperature" class="form-input" value="92">
+                        </div>
+                        <div class="form-group">
+                            <label for="simHumidity">Humidity (%)</label>
+                            <input type="number" id="simHumidity" class="form-input" value="15">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="parameter-group">
+                    <h4>Simulation Settings</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="simTimeHorizon">Time Horizon (hours)</label>
+                            <input type="number" id="simTimeHorizon" class="form-input" value="24">
+                        </div>
+                        <div class="form-group">
+                            <label for="simIgnitionPoint">Ignition Point</label>
+                            <select id="simIgnitionPoint" class="form-select">
+                                <option value="auto">Auto (High Risk)</option>
+                                <option value="custom">Custom (Map Click)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="simulation-preview">
+                <div id="simulationMap" class="simulation-map"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" id="startSimulationBtn">Start Simulation</button>
+            <button class="btn btn-outline" id="cancelSimulationBtn">Cancel</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize analysis map
+    const analysisMap = L.map('analysisMap').setView([34.052, -118.243], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(analysisMap);
+    
+    // Add NDVI as a sample overlay
+    const ndviOverlay = L.imageOverlay("{{ url_for('static', filename='img/ndvi-sample.png') }}", 
+        [[34.17, -118.6], [33.93, -118.0]], 
+        {opacity: 0.7}
+    ).addTo(analysisMap);
+    
+    // Add analysis zones
+    const zones = [
+        { name: "Northridge Canyon", coords: [[34.2, -118.5], [34.3, -118.5], [34.3, -118.4], [34.2, -118.4]], risk: "critical" },
+        { name: "Eastern Foothills", coords: [[34.1, -118.2], [34.2, -118.2], [34.2, -118.1], [34.1, -118.1]], risk: "high" },
+        { name: "Pine Ridge Forest", coords: [[34.0, -118.3], [34.1, -118.3], [34.1, -118.2], [34.0, -118.2]], risk: "high" },
+        { name: "Valley Grasslands", coords: [[33.9, -118.4], [34.0, -118.4], [34.0, -118.3], [33.9, -118.3]], risk: "medium" }
+    ];
+
+    const zonesLayer = L.layerGroup().addTo(analysisMap);
+    
+    zones.forEach(zone => {
+        let color;
+        switch(zone.risk) {
+            case "critical": color = "#d9534f"; break;
+            case "high": color = "#f0ad4e"; break;
+            case "medium": color = "#5bc0de"; break;
+            default: color = "#5cb85c";
+        }
+        
+        L.polygon(zone.coords, {
+            color: color,
+            fillOpacity: 0.3,
+            weight: 2
+        }).bindPopup(`
+            <div class="zone-popup">
+                <h4>${zone.name}</h4>
+                <div class="zone-risk ${zone.risk}">Risk: ${zone.risk}</div>
+                <div class="zone-indices">
+                    <div class="zone-index">NDVI: 0.52</div>
+                    <div class="zone-index">NBR: 0.18</div>
+                </div>
+                <button class="btn btn-sm btn-primary popup-btn">Analyze Zone</button>
+            </div>
+        `).addTo(zonesLayer);
+    });
+    
+    // Layer toggle functionality
+    document.getElementById('ndviToggle').addEventListener('change', function() {
+        if (this.checked) {
+            ndviOverlay.addTo(analysisMap);
+        } else {
+            ndviOverlay.remove();
+        }
+    });
+    
+    document.getElementById('zonesToggle').addEventListener('change', function() {
+        if (this.checked) {
+            zonesLayer.addTo(analysisMap);
+        } else {
+            zonesLayer.remove();
+        }
+    });
+    
+    // Run Analysis button
+    document.getElementById('runAnalysisBtn').addEventListener('click', function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+        
+        // Simulate analysis running
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-play"></i> Run Analysis';
+            
+            // Update the risk assessment card with "new" data
+            document.querySelector('.risk-assessment').classList.add('updated');
+            setTimeout(() => {
+                document.querySelector('.risk-assessment').classList.remove('updated');
+            }, 2000);
+        }, 3000);
+    });
+    
+    // Simulation modal
+    const modal = document.getElementById('simulationModal');
+    const runSimulationBtn = document.getElementById('runSimulationBtn');
+    const closeBtn = document.querySelector('.modal-close');
+    const cancelBtn = document.getElementById('cancelSimulationBtn');
+    
+    runSimulationBtn.addEventListener('click', () => {
+        modal.style.display = 'flex';
+        
+        // Initialize simulation map
+        setTimeout(() => {
+            const simMap = L.map('simulationMap').setView([34.052, -118.243], 11);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(simMap);
+            
+            // Add a sample ignition point
+            L.marker([34.2, -118.4], {
+                icon: L.divIcon({
+                    className: 'ignition-point',
+                    html: '<i class="fas fa-fire"></i>',
+                    iconSize: [20, 20]
+                })
+            }).addTo(simMap);
+            
+            // Add a sample fire spread simulation (simple circle for demo)
+            L.circle([34.2, -118.4], {
+                radius: 2000,
+                color: '#d9534f',
+                fillColor: '#d9534f',
+                fillOpacity: 0.3,
+                dashArray: '5, 5',
+                weight: 2
+            }).addTo(simMap);
+        }, 100);
+    });
+    
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+    
+    // Start simulation button
+    document.getElementById('startSimulationBtn').addEventListener('click', function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+        
+        // Simulate processing
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = 'Start Simulation';
+            
+            // Here we'd show the simulation results
+            alert('Simulation complete. In a real application, this would display the fire spread prediction over time.');
+            
+            modal.style.display = 'none';
+        }, 4000);
+    });
+</script>
+{% endblock %}

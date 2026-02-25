@@ -1,0 +1,307 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload CSV Data - Wildfire Risk Assessment{% endblock %}
+{% block header %}Upload CSV Data{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <div class="card upload-card">
+        <div class="card-header">
+            <h3>Upload CSV Data</h3>
+        </div>
+        <div class="card-body">
+            <form id="csvUploadForm" class="upload-form" enctype="multipart/form-data" method="post" action="/upload/csv">
+                <div class="form-group">
+                    <label for="csvDataType">Data Type</label>
+                    <select id="csvDataType" name="csvDataType" class="form-select">
+                        <option value="feature_data">Feature Data (for XGBoost Model)</option>
+                        <option value="coordinates">Coordinate Boundary Data</option>
+                        <option value="weather">Weather Conditions Data</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="csvDataInfo">
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <h4>XGBoost Model Input Format</h4>
+                            <p>Upload CSV containing the following columns:</p>
+                            <ul>
+                                <li>NDVI</li>
+                                <li>NBR</li>
+                                <li>NDWI</li>
+                                <li>Temp</li>
+                                <li>Wind_Dir</li>
+                                <li>Wind_Spd</li>
+                                <li>Humidity</li>
+                                <li>Elev</li>
+                                <li>Slope</li>
+                                <li>Latitude</li>
+                                <li>Longitude</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="csvRegion">Region</label>
+                    <select id="csvRegion" name="csvRegion" class="form-select">
+                        <option value="northridge">Northridge Canyon</option>
+                        <option value="eastern">Eastern Foothills</option>
+                        <option value="pine">Pine Ridge Forest</option>
+                        <option value="valley">Valley Grasslands</option>
+                        <option value="custom">Custom Region (Draw on Map)</option>
+                        <option value="from_csv">From CSV (Uses lat/long in CSV)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="csvRegionMapContainer" style="display: none;">
+                    <label>Define Custom Region</label>
+                    <div id="csvRegionMap" class="region-map"></div>
+                    <small class="form-text">Click on the map to create a polygon for your custom region.</small>
+                </div>
+                
+                <div class="form-group upload-box">
+                    <label>Upload CSV File</label>
+                    <div class="dropzone" id="csvDropzone">
+                        <i class="fas fa-file-csv"></i>
+                        <p>Drag & drop CSV file here or click to browse</p>
+                        <input type="file" id="csvFileInput" name="csvFile" accept=".csv" style="display: none;">
+                    </div>
+                    <div class="upload-preview" id="csvUploadPreview"></div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" id="csvRunModel" name="runModel" class="form-check-input" checked>
+                        <label for="csvRunModel" class="form-check-label">Run XGBoost wildfire prediction model</label>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Upload & Analyze</button>
+                    <button type="button" class="btn btn-outline">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card help-card">
+        <div class="card-header">
+            <h3>CSV Data Requirements</h3>
+        </div>
+        <div class="card-body">
+            <div class="accordion" id="helpAccordion">
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-toggle="collapse" data-target="#csvHelp">
+                            CSV Data for XGBoost Model
+                        </button>
+                    </div>
+                    <div id="csvHelp" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul class="help-list">
+                                <li><strong>Required Format:</strong> CSV with header row</li>
+                                <li><strong>Required Columns:</strong> temperature, humidity, wind_speed, precipitation, ndvi, elevation, slope, aspect, fuel_type, latitude, longitude</li>
+                                <li><strong>Example:</strong> <a href="#" class="external-link">Download sample CSV template</a></li>
+                                <li><strong>Note:</strong> Make sure all numeric fields contain valid numbers and there are no missing values</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // CSV Region selection logic
+    document.getElementById('csvRegion').addEventListener('change', function() {
+        const csvRegionMapContainer = document.getElementById('csvRegionMapContainer');
+        if (this.value === 'custom') {
+            csvRegionMapContainer.style.display = 'block';
+            // Initialize map if needed
+            if (!window.csvRegionMapInitialized) {
+                setTimeout(() => {
+                    const map = L.map('csvRegionMap').setView([34.052, -118.243], 10);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(map);
+                    
+                    // Add draw controls
+                    const drawnItems = new L.FeatureGroup();
+                    map.addLayer(drawnItems);
+                    
+                    // Simulate draw control functionality
+                    let polygon = L.polygon([
+                        [34.05, -118.25],
+                        [34.07, -118.23],
+                        [34.06, -118.21],
+                        [34.04, -118.22]
+                    ], {
+                        color: '#3388ff',
+                        fillOpacity: 0.2
+                    }).addTo(map);
+                    
+                    window.csvRegionMapInitialized = true;
+                }, 100);
+            }
+        } else {
+            csvRegionMapContainer.style.display = 'none';
+        }
+    });
+    
+    // Update the info box text to match the column names expected by the backend
+    document.getElementById('csvDataType').addEventListener('change', function() {
+        const infoBox = document.getElementById('csvDataInfo').querySelector('.info-box div');
+        
+        if (this.value === 'feature_data') {
+            infoBox.innerHTML = `
+                <h4>XGBoost Model Input Format</h4>
+                <p>Upload CSV containing the following columns:</p>
+                <ul>
+                    <li>NDVI</li>
+                    <li>NBR</li>
+                    <li>NDWI</li>
+                    <li>Temp</li>
+                    <li>Wind_Dir</li>
+                    <li>Wind_Spd</li>
+                    <li>Humidity</li>
+                    <li>Elev</li>
+                    <li>Slope</li>
+                    <li>Latitude</li>
+                    <li>Longitude</li>
+                </ul>
+            `;
+        } else if (this.value === 'coordinates') {
+            infoBox.innerHTML = `
+                <h4>Coordinate Boundary Format</h4>
+                <p>Upload CSV with coordinate points that define a region boundary:</p>
+                <ul>
+                    <li>point_id</li>
+                    <li>latitude</li>
+                    <li>longitude</li>
+                    <li>order (optional, for point sequence)</li>
+                </ul>
+            `;
+        } else if (this.value === 'weather') {
+            infoBox.innerHTML = `
+                <h4>Weather Conditions Format</h4>
+                <p>Upload CSV with weather data for the region:</p>
+                <ul>
+                    <li>date</li>
+                    <li>temperature</li>
+                    <li>humidity</li>
+                    <li>wind_speed</li>
+                    <li>wind_direction</li>
+                    <li>precipitation</li>
+                </ul>
+            `;
+        }
+    });
+
+    document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        var formData = new FormData(this);
+        
+        fetch('/upload/csv', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Store the GPT analysis in localStorage
+                if (data.gpt_analysis) {
+                    localStorage.setItem('firesight_gpt_analysis', data.gpt_analysis);
+                }
+                
+                // Redirect to homepage
+                window.location.href = '/';
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during upload.');
+        });
+    });
+
+    // CSV file upload interface
+    const csvDropzone = document.getElementById('csvDropzone');
+    const csvFileInput = document.getElementById('csvFileInput');
+    const csvUploadPreview = document.getElementById('csvUploadPreview');
+    
+    csvDropzone.addEventListener('click', () => csvFileInput.click());
+    
+    csvDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        csvDropzone.classList.add('dragover');
+    });
+    
+    csvDropzone.addEventListener('dragleave', () => {
+        csvDropzone.classList.remove('dragover');
+    });
+    
+    csvDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        csvDropzone.classList.remove('dragover');
+        handleCSVFile(e.dataTransfer.files);
+    });
+    
+    csvFileInput.addEventListener('change', () => {
+        handleCSVFile(csvFileInput.files);
+    });
+    
+    function handleCSVFile(files) {
+        csvUploadPreview.innerHTML = '';
+        
+        if (files.length > 0) {
+            const file = files[0]; // Just take the first file
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            
+            const fileIcon = document.createElement('i');
+            fileIcon.className = 'fas fa-file-csv';
+            
+            const fileInfo = document.createElement('div');
+            fileInfo.className = 'file-info';
+            
+            const fileName = document.createElement('span');
+            fileName.className = 'file-name';
+            fileName.textContent = file.name;
+            
+            const fileSize = document.createElement('span');
+            fileSize.className = 'file-size';
+            fileSize.textContent = formatFileSize(file.size);
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn btn-icon btn-remove';
+            removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            removeBtn.addEventListener('click', () => {
+                fileItem.remove();
+                csvFileInput.value = '';
+            });
+            
+            fileInfo.appendChild(fileName);
+            fileInfo.appendChild(fileSize);
+            
+            fileItem.appendChild(fileIcon);
+            fileItem.appendChild(fileInfo);
+            fileItem.appendChild(removeBtn);
+            
+            csvUploadPreview.appendChild(fileItem);
+        }
+    }
+    
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+</script>
+{% endblock %}
