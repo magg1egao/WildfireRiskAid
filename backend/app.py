@@ -3,8 +3,6 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
-from geoalchemy2 import Geometry
-from sqlalchemy.dialects.postgresql import JSONB
 from werkzeug.utils import secure_filename
 import numpy as np
 import json
@@ -17,7 +15,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# GPT4All — optional, app still runs without the model file
+# ── Optional heavy dependencies ────────────────────────────────────────────────
+
 try:
     from gpt4all import GPT4All
     _model_file = os.getenv('GPT4ALL_MODEL', 'Meta-Llama-3-8B-Instruct.Q4_0.gguf')
@@ -25,7 +24,6 @@ try:
 except Exception:
     llm = None
 
-# XGBoost prediction model
 _xgb_path = os.getenv(
     'XGB_MODEL_PATH',
     os.path.join(os.path.dirname(__file__), '..', 'predictive_model', 'XgBoost', 'xgboost_wildfire_model.joblib')
@@ -35,22 +33,142 @@ try:
 except Exception:
     xgb_model = None
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://localhost/wildfire_db')
+# ── Database — SQLite by default, PostgreSQL if DATABASE_URL is set ─────────────
+
+_default_db = 'sqlite:///' + os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wildfire.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', _default_db)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 
 db = SQLAlchemy(app)
 
 
-# ── AI helpers ────────────────────────────────────────────────────────────────
+# ── Models ─────────────────────────────────────────────────────────────────────
+
+class Zone(db.Model):
+    __tablename__ = 'zones'
+    zone_id     = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(100), nullable=False)
+    zone_type   = db.Column(db.String(50))
+    coordinates = db.Column(db.JSON)       # list of [lat, lon] pairs
+    risk_level  = db.Column(db.String(20)) # critical | high | medium | low
+    risk_score  = db.Column(db.Float)      # 0–100
+    ndvi        = db.Column(db.Float)
+    nbr         = db.Column(db.Float)
+    ndwi        = db.Column(db.Float)
+    terrain     = db.Column(db.String(50))
+    vegetation  = db.Column(db.String(50))
+    details     = db.Column(db.Text)
+    updated_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class VegetationTrend(db.Model):
+    __tablename__ = 'vegetation_trends'
+    id          = db.Column(db.Integer, primary_key=True)
+    label       = db.Column(db.String(50), nullable=False)
+    ndvi        = db.Column(db.Float)
+    nbr         = db.Column(db.Float)
+    ndwi        = db.Column(db.Float)
+    period_days = db.Column(db.Integer)  # 7, 30, or 90
+    sort_order  = db.Column(db.Integer)
+
+
+class PredictionResult(db.Model):
+    __tablename__    = 'prediction_results'
+    prediction_id    = db.Column(db.Integer, primary_key=True)
+    filename         = db.Column(db.String(255), nullable=False)
+    upload_date      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    prediction_data  = db.Column(db.JSON)
+    analysis_summary = db.Column(db.Text)
+
+
+# ── Seed data ──────────────────────────────────────────────────────────────────
+
+_ZONES = [
+    {
+        'name': 'Northridge Canyon',
+        'zone_type': 'Canyon',
+        'coordinates': [[34.2, -118.5], [34.3, -118.5], [34.3, -118.4], [34.2, -118.4]],
+        'risk_level': 'critical', 'risk_score': 89.0,
+        'ndvi': 0.37, 'nbr': 0.25, 'ndwi': 0.21,
+        'terrain': 'Canyon', 'vegetation': 'Dense',
+        'details': 'Extreme dry conditions, increasing winds, and declining vegetation health (NDVI: 0.37)',
+    },
+    {
+        'name': 'Eastern Foothills',
+        'zone_type': 'Foothills',
+        'coordinates': [[34.1, -118.2], [34.2, -118.2], [34.2, -118.1], [34.1, -118.1]],
+        'risk_level': 'high', 'risk_score': 72.0,
+        'ndvi': 0.52, 'nbr': 0.31, 'ndwi': 0.28,
+        'terrain': 'Foothills', 'vegetation': 'Moderate',
+        'details': 'Decreasing moisture levels, temperatures expected to rise to 92°F today',
+    },
+    {
+        'name': 'Pine Ridge Forest',
+        'zone_type': 'Ridge',
+        'coordinates': [[34.0, -118.3], [34.1, -118.3], [34.1, -118.2], [34.0, -118.2]],
+        'risk_level': 'high', 'risk_score': 68.0,
+        'ndvi': 0.48, 'nbr': 0.29, 'ndwi': 0.25,
+        'terrain': 'Ridge', 'vegetation': 'Dense',
+        'details': 'Limited access routes, dense vegetation with declining moisture content',
+    },
+    {
+        'name': 'Valley Grasslands',
+        'zone_type': 'Valley',
+        'coordinates': [[33.9, -118.4], [34.0, -118.4], [34.0, -118.3], [33.9, -118.3]],
+        'risk_level': 'medium', 'risk_score': 45.0,
+        'ndvi': 0.61, 'nbr': 0.42, 'ndwi': 0.38,
+        'terrain': 'Valley', 'vegetation': 'Sparse',
+        'details': 'Moderate conditions, monitoring recommended during dry months',
+    },
+]
+
+_TRENDS = {
+    7: [
+        ('Mar 16', 0.65, 0.32, 0.41, 1), ('Mar 17', 0.64, 0.31, 0.40, 2),
+        ('Mar 18', 0.62, 0.30, 0.38, 3), ('Mar 19', 0.59, 0.28, 0.35, 4),
+        ('Mar 20', 0.57, 0.25, 0.32, 5), ('Mar 21', 0.54, 0.21, 0.30, 6),
+        ('Mar 22', 0.52, 0.18, 0.28, 7),
+    ],
+    30: [
+        ('Feb 21', 0.72, 0.41, 0.51, 1), ('Feb 28', 0.68, 0.37, 0.46, 2),
+        ('Mar 7',  0.64, 0.31, 0.40, 3), ('Mar 14', 0.58, 0.25, 0.34, 4),
+        ('Mar 22', 0.52, 0.18, 0.28, 5),
+    ],
+    90: [
+        ('Dec 22', 0.81, 0.55, 0.62, 1), ('Jan 5',  0.78, 0.51, 0.59, 2),
+        ('Jan 19', 0.74, 0.46, 0.54, 3), ('Feb 2',  0.70, 0.40, 0.48, 4),
+        ('Feb 16', 0.65, 0.35, 0.42, 5), ('Mar 1',  0.59, 0.27, 0.35, 6),
+        ('Mar 22', 0.52, 0.18, 0.28, 7),
+    ],
+}
+
+
+def seed_data():
+    if Zone.query.count() == 0:
+        for z in _ZONES:
+            db.session.add(Zone(**z))
+    if VegetationTrend.query.count() == 0:
+        for days, rows in _TRENDS.items():
+            for label, ndvi, nbr, ndwi, order in rows:
+                db.session.add(VegetationTrend(
+                    label=label, ndvi=ndvi, nbr=nbr, ndwi=ndwi,
+                    period_days=days, sort_order=order,
+                ))
+    db.session.commit()
+
+
+# ── AI helpers ─────────────────────────────────────────────────────────────────
 
 def generate_chat_response(query, context=None):
     if llm is None:
-        return "AI model not available. Please ensure the GPT4All model file is present."
-
+        return (
+            "The AI assistant requires the GPT4All model file "
+            "(Meta-Llama-3-8B-Instruct.Q4_0.gguf). Set GPT4ALL_MODEL in your .env file "
+            "to enable it. All other dashboard features are fully functional."
+        )
     system_prompt = (
-        "You are FireSight AI Assistant, an expert in wildfire risk assessment and management. "
-        "You help analyze satellite imagery, vegetation indices, weather patterns, and terrain factors. "
+        "You are FireSight AI Assistant, an expert in wildfire risk assessment. "
         "Provide concise, actionable information about wildfire risks and prevention strategies."
     )
     user_prompt = f"Context: {json.dumps(context)}\n\nUser query: {query}" if context else query
@@ -59,176 +177,138 @@ def generate_chat_response(query, context=None):
 
 def analyze_with_gpt4all(data):
     if llm is None:
-        return "AI analysis not available. Model file not loaded."
+        num = len(data)
+        avg_ndvi = f"{data['NDVI'].mean():.3f}" if 'NDVI' in data.columns else 'N/A'
+        if 'Wildfire_Probability' in data.columns:
+            probs = data['Wildfire_Probability']
+            high = int((probs > 0.7).sum())
+            med  = int(((probs > 0.4) & (probs <= 0.7)).sum())
+            low  = int((probs <= 0.4).sum())
+            return (
+                f"Processed {num} locations. Average NDVI: {avg_ndvi}. "
+                f"Risk breakdown — High (>70%): {high}, Medium (40–70%): {med}, Low (<40%): {low}. "
+                "AI narrative analysis unavailable — model file not loaded."
+            )
+        return f"Processed {num} locations. Average NDVI: {avg_ndvi}. AI analysis unavailable."
 
     def col(name):
-        return f"{data[name].mean():.3f}" if name in data.columns else "N/A"
+        return f"{data[name].mean():.3f}" if name in data.columns else 'N/A'
 
     prompt = (
-        f"Analyze this wildfire risk data summary:\n"
+        f"Analyze this wildfire risk data:\n"
         f"Dataset: {len(data)} locations\n"
         f"NDVI: {col('NDVI')}, NBR: {col('NBR')}, NDWI: {col('NDWI')}\n"
         f"Temp: {col('Temp')}°C, Humidity: {col('Humidity')}%, Wind: {col('Wind_Spd')} km/h\n"
-        f"Elevation: {col('Elev')} m, Slope: {col('Slope')}°\n"
     )
     if 'Wildfire_Probability' in data.columns:
         probs = data['Wildfire_Probability']
         prompt += (
-            f"Wildfire probability — avg: {probs.mean():.3f}, max: {probs.max():.3f}\n"
-            f"High risk (>70%): {(probs > 0.7).sum()}, "
-            f"Medium (40–70%): {((probs > 0.4) & (probs <= 0.7)).sum()}, "
-            f"Low (<40%): {(probs <= 0.4).sum()}\n"
+            f"Avg probability: {probs.mean():.3f}, max: {probs.max():.3f}\n"
+            f"High risk (>70%): {(probs > 0.7).sum()}\n"
         )
-    prompt += "\nProvide: overall risk assessment, key contributing factors, and monitoring recommendations."
+    prompt += "\nProvide: risk assessment, key factors, and monitoring recommendations."
     return llm.generate(prompt, max_tokens=1024).strip()
 
 
-# ── Summary helpers ───────────────────────────────────────────────────────────
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
-def summarize_risk_data(risk_assessments):
-    if not risk_assessments:
-        return "No risk assessment data available."
+@app.route('/api/zones', methods=['GET'])
+def get_zones():
+    zones = Zone.query.all()
+    return jsonify([{
+        'zone_id':     z.zone_id,
+        'name':        z.name,
+        'zone_type':   z.zone_type,
+        'coordinates': z.coordinates,
+        'risk_level':  z.risk_level,
+        'risk_score':  z.risk_score,
+        'ndvi':        z.ndvi,
+        'nbr':         z.nbr,
+        'ndwi':        z.ndwi,
+        'terrain':     z.terrain,
+        'vegetation':  z.vegetation,
+        'details':     z.details,
+    } for z in zones])
 
-    levels = [a.risk_level for a in risk_assessments]
-    scores = [a.risk_score for a in risk_assessments if a.risk_score]
-    recent = max(risk_assessments, key=lambda x: x.assessment_date)
 
-    summary = (
-        f"Summary of {len(risk_assessments)} risk assessments:\n"
-        f"- Critical: {levels.count('Critical')}, High: {levels.count('High')}, "
-        f"Medium: {levels.count('Medium')}, Low: {levels.count('Low')}\n"
+@app.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    zones = (
+        Zone.query
+        .filter(Zone.risk_level.in_(['critical', 'high']))
+        .order_by(Zone.risk_score.desc())
+        .all()
     )
-    if scores:
-        summary += f"- Average risk score: {np.mean(scores):.2f}\n"
-    summary += (
-        f"\nMost recent ({recent.assessment_date.strftime('%Y-%m-%d')}):\n"
-        f"- Level: {recent.risk_level}, Score: {recent.risk_score:.2f}\n"
-        f"- Area: {recent.analysis_zone.zone_name if recent.analysis_zone else 'Unknown'}\n"
+    return jsonify([{
+        'name':     z.name,
+        'severity': z.risk_level,
+        'label':    f"{'Critical' if z.risk_level == 'critical' else 'High'} ({z.risk_score:.0f}%)",
+        'details':  z.details,
+        'action':   'Deploy Resources' if z.risk_level == 'critical' else 'Monitor',
+    } for z in zones])
+
+
+@app.route('/api/dashboard-stats', methods=['GET'])
+def get_dashboard_stats():
+    zones = Zone.query.all()
+    if not zones:
+        return jsonify({
+            'risk_level': 'Unknown', 'active_alerts': 0,
+            'avg_ndvi': 0, 'wind_speed': 'N/A', 'last_updated': 'N/A',
+        })
+
+    alert_count = sum(1 for z in zones if z.risk_level in ('critical', 'high'))
+    ndvi_vals   = [z.ndvi for z in zones if z.ndvi is not None]
+    avg_ndvi    = round(float(np.mean(ndvi_vals)), 2) if ndvi_vals else 0
+
+    counts = {l: sum(1 for z in zones if z.risk_level == l)
+              for l in ('critical', 'high', 'medium', 'low')}
+    if counts['critical'] > 0:
+        overall = 'Critical'
+    elif counts['high'] > 0:
+        overall = 'High'
+    elif counts['medium'] > 0:
+        overall = 'Medium'
+    else:
+        overall = 'Low'
+
+    last_updated = max(
+        (z.updated_at for z in zones if z.updated_at),
+        default=datetime.now(timezone.utc),
     )
-    return summary
+    return jsonify({
+        'risk_level':    overall,
+        'active_alerts': alert_count,
+        'avg_ndvi':      avg_ndvi,
+        'wind_speed':    '12 mph',
+        'last_updated':  last_updated.strftime('%B %d, %I:%M %p'),
+    })
 
 
-def summarize_vegetation_indices(indices_data):
-    if not indices_data:
-        return "No vegetation index data available."
+@app.route('/api/indices-trend', methods=['GET'])
+def get_indices_trend():
+    days   = int(request.args.get('days', 7))
+    trends = (
+        VegetationTrend.query
+        .filter_by(period_days=days)
+        .order_by(VegetationTrend.sort_order)
+        .all()
+    )
+    return jsonify({
+        'labels': [t.label for t in trends],
+        'ndvi':   [t.ndvi  for t in trends],
+        'nbr':    [t.nbr   for t in trends],
+        'ndwi':   [t.ndwi  for t in trends],
+    })
 
-    def get(name):
-        return next((i for i in indices_data if i.index_name == name), None)
-
-    ndvi, nbr, ndwi = get('NDVI'), get('NBR'), get('NDWI')
-    summary = "Vegetation Index Summary:\n"
-
-    if ndvi:
-        status = "healthy" if ndvi.mean_value > 0.6 else "stressed" if ndvi.mean_value > 0.4 else "severely stressed"
-        summary += f"NDVI: {ndvi.mean_value:.2f} ({status}), range {ndvi.min_value:.2f}–{ndvi.max_value:.2f}\n"
-    if nbr:
-        status = "no burn" if nbr.mean_value > 0.3 else "moderate burn" if nbr.mean_value > 0.1 else "severe burn"
-        summary += f"NBR: {nbr.mean_value:.2f} ({status}), range {nbr.min_value:.2f}–{nbr.max_value:.2f}\n"
-    if ndwi:
-        status = "adequate" if ndwi.mean_value > 0.4 else "moderate" if ndwi.mean_value > 0.2 else "low"
-        summary += f"NDWI: {ndwi.mean_value:.2f} ({status} moisture), range {ndwi.min_value:.2f}–{ndwi.max_value:.2f}\n"
-
-    if ndvi and nbr and ndwi:
-        risk_score = (1 - ndvi.mean_value) * 0.4 + (1 - nbr.mean_value) * 0.3 + (1 - ndwi.mean_value) * 0.3
-        risk_level = "HIGH" if risk_score > 0.6 else "MODERATE" if risk_score > 0.4 else "LOW"
-        summary += f"\nOverall vegetation risk: {risk_level}\n"
-
-    return summary
-
-
-# ── Database models ───────────────────────────────────────────────────────────
-
-class SatelliteImageStats(db.Model):
-    __tablename__ = 'satellite_image_stats'
-    stats_id          = db.Column(db.Integer, primary_key=True)
-    image_name        = db.Column(db.String(255), nullable=False)
-    acquisition_date  = db.Column(db.DateTime, nullable=False)
-    sensor_type       = db.Column(db.String(50), nullable=False)
-    resolution        = db.Column(db.Float, nullable=False)
-    cloud_cover_percentage = db.Column(db.Float)
-    region_geometry   = db.Column(Geometry('POLYGON', srid=4326))
-    image_metadata    = db.Column(JSONB)
-    created_at        = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    spectral_statistics       = db.relationship('SpectralStatistics', backref='image', lazy=True, cascade='all, delete-orphan')
-    spectral_index_statistics = db.relationship('SpectralIndexStatistics', backref='image', lazy=True, cascade='all, delete-orphan')
-    risk_assessments          = db.relationship('RiskAssessment', backref='image', lazy=True)
-
-
-class SpectralStatistics(db.Model):
-    __tablename__ = 'spectral_statistics'
-    stat_id       = db.Column(db.Integer, primary_key=True)
-    stats_id      = db.Column(db.Integer, db.ForeignKey('satellite_image_stats.stats_id', ondelete='CASCADE'), nullable=False)
-    band_name     = db.Column(db.String(50), nullable=False)
-    band_number   = db.Column(db.Integer)
-    wavelength_nm = db.Column(db.Float)
-    min_value     = db.Column(db.Float)
-    max_value     = db.Column(db.Float)
-    mean_value    = db.Column(db.Float)
-    median_value  = db.Column(db.Float)
-    std_dev       = db.Column(db.Float)
-    histogram_data = db.Column(JSONB)
-    created_at    = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-
-
-class SpectralIndexStatistics(db.Model):
-    __tablename__  = 'spectral_index_statistics'
-    index_stat_id  = db.Column(db.Integer, primary_key=True)
-    stats_id       = db.Column(db.Integer, db.ForeignKey('satellite_image_stats.stats_id', ondelete='CASCADE'), nullable=False)
-    index_name     = db.Column(db.String(50), nullable=False)
-    formula        = db.Column(db.String(255))
-    min_value      = db.Column(db.Float)
-    max_value      = db.Column(db.Float)
-    mean_value     = db.Column(db.Float)
-    median_value   = db.Column(db.Float)
-    std_dev        = db.Column(db.Float)
-    percentile_data = db.Column(JSONB)
-    created_at     = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-
-
-class AnalysisZone(db.Model):
-    __tablename__ = 'analysis_zones'
-    zone_id   = db.Column(db.Integer, primary_key=True)
-    zone_name = db.Column(db.String(100), nullable=False)
-    zone_type = db.Column(db.String(50))
-    geometry  = db.Column(Geometry('POLYGON', srid=4326))
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    risk_assessments = db.relationship('RiskAssessment', backref='zone', lazy=True)
-
-
-class RiskAssessment(db.Model):
-    __tablename__     = 'risk_assessments'
-    assessment_id     = db.Column(db.Integer, primary_key=True)
-    stats_id          = db.Column(db.Integer, db.ForeignKey('satellite_image_stats.stats_id'))
-    zone_id           = db.Column(db.Integer, db.ForeignKey('analysis_zones.zone_id'))
-    assessment_date   = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    risk_level        = db.Column(db.String(20), nullable=False)
-    risk_score        = db.Column(db.Float)
-    confidence_level  = db.Column(db.Float)
-    weather_conditions = db.Column(JSONB)
-    model_version     = db.Column(db.String(50))
-    summary           = db.Column(db.Text)
-    created_at        = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-
-
-class PredictionResult(db.Model):
-    __tablename__   = 'prediction_results'
-    prediction_id   = db.Column(db.Integer, primary_key=True)
-    filename        = db.Column(db.String(255), nullable=False)
-    upload_date     = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    prediction_data = db.Column(JSONB)
-    analysis_summary = db.Column(db.Text)
-    created_at      = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/upload/csv', methods=['POST'])
 def upload_csv():
     if 'csvFile' not in request.files:
-        return jsonify({"error": "No file part"})
+        return jsonify({'error': 'No file part'})
     file = request.files['csvFile']
     if not file.filename:
-        return jsonify({"error": "No selected file"})
+        return jsonify({'error': 'No selected file'})
 
     filename = secure_filename(file.filename)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -242,182 +322,122 @@ def upload_csv():
 
         if data_type == 'feature_data':
             required = ['NDVI', 'NBR', 'NDWI', 'Temp', 'Wind_Dir', 'Wind_Spd', 'Humidity', 'Elev', 'Slope']
-            missing = [c for c in required if c not in df.columns]
+            missing  = [c for c in required if c not in df.columns]
             if missing:
-                return jsonify({"error": f"Missing columns: {', '.join(missing)}"})
+                return jsonify({'error': f"Missing columns: {', '.join(missing)}"})
 
             if run_model:
                 if xgb_model is None:
-                    return jsonify({"error": "Prediction model not available."})
+                    return jsonify({'error': 'XGBoost model file not found. Set XGB_MODEL_PATH in .env.'})
+
                 probs = xgb_model.predict_proba(df[required])[:, 1]
                 df['Wildfire_Probability'] = probs
                 gpt_analysis = analyze_with_gpt4all(df)
 
+                pred_data = {
+                    'num_locations':        len(df),
+                    'avg_probability':      round(float(np.mean(probs)), 3),
+                    'max_probability':      round(float(np.max(probs)), 3),
+                    'high_risk_locations':  int(np.sum(probs > 0.7)),
+                    'medium_risk_locations': int(np.sum((probs > 0.4) & (probs <= 0.7))),
+                    'low_risk_locations':   int(np.sum(probs <= 0.4)),
+                }
                 result = PredictionResult(
                     filename=filename,
-                    prediction_data={
-                        'num_locations': len(df),
-                        'avg_probability': float(np.mean(probs)),
-                        'max_probability': float(np.max(probs)),
-                        'high_risk_locations': int(np.sum(probs > 0.7)),
-                    },
-                    analysis_summary=gpt_analysis[:500],
+                    prediction_data=pred_data,
+                    analysis_summary=gpt_analysis[:1000],
                 )
                 db.session.add(result)
                 db.session.commit()
                 return jsonify({
-                    "success": True,
-                    "message": "File uploaded and processed successfully",
-                    "wildfire_predictions": df.to_dict(orient='records'),
-                    "gpt_analysis": gpt_analysis,
-                    "prediction_id": result.prediction_id,
+                    'success':          True,
+                    'message':          'File processed successfully',
+                    'prediction_data':  pred_data,
+                    'gpt_analysis':     gpt_analysis,
+                    'prediction_id':    result.prediction_id,
+                    'wildfire_predictions': df.head(100).to_dict(orient='records'),
                 })
 
-            return jsonify({"success": True, "message": "File uploaded", "rows": len(df), "columns": list(df.columns)})
+            return jsonify({'success': True, 'message': 'File uploaded', 'rows': len(df), 'columns': list(df.columns)})
 
         elif data_type == 'coordinates':
             cols_lower = [c.lower() for c in df.columns]
             if 'latitude' not in cols_lower or 'longitude' not in cols_lower:
-                return jsonify({"error": "Missing required columns: latitude, longitude"})
-            return jsonify({"success": True, "message": "Coordinate data uploaded", "points": len(df)})
+                return jsonify({'error': 'Missing required columns: latitude, longitude'})
+            return jsonify({'success': True, 'message': 'Coordinate data uploaded', 'points': len(df)})
 
         elif data_type == 'weather':
-            required = ['date', 'temperature', 'humidity', 'wind_speed']
+            required  = ['date', 'temperature', 'humidity', 'wind_speed']
             cols_lower = [c.lower() for c in df.columns]
-            missing = [c for c in required if c not in cols_lower]
+            missing   = [c for c in required if c not in cols_lower]
             if missing:
-                return jsonify({"error": f"Missing columns: {', '.join(missing)}"})
-            return jsonify({"success": True, "message": "Weather data uploaded", "days": len(df)})
+                return jsonify({'error': f"Missing columns: {', '.join(missing)}"})
+            return jsonify({'success': True, 'message': 'Weather data uploaded', 'days': len(df)})
 
-        return jsonify({"success": True, "message": "File uploaded", "rows": len(df), "columns": list(df.columns)})
+        return jsonify({'success': True, 'message': 'File uploaded', 'rows': len(df)})
 
     except Exception as e:
-        return jsonify({"error": f"Error processing file: {str(e)}"})
+        return jsonify({'error': f'Error processing file: {str(e)}'})
 
 
 @app.route('/api/predictions', methods=['GET'])
 def get_predictions():
     predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).all()
     return jsonify([{
-        'prediction_id': p.prediction_id,
-        'filename': p.filename,
-        'upload_date': p.upload_date.isoformat(),
-        'avg_probability': p.prediction_data.get('avg_probability'),
-        'high_risk_locations': p.prediction_data.get('high_risk_locations'),
+        'prediction_id':  p.prediction_id,
+        'filename':       p.filename,
+        'upload_date':    p.upload_date.isoformat(),
+        'prediction_data': p.prediction_data,
     } for p in predictions])
-
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    stats = SatelliteImageStats.query.order_by(SatelliteImageStats.acquisition_date.desc()).all()
-    return jsonify([{
-        'stats_id': s.stats_id,
-        'image_name': s.image_name,
-        'acquisition_date': s.acquisition_date.isoformat(),
-        'sensor_type': s.sensor_type,
-        'risk_assessments': len(s.risk_assessments),
-    } for s in stats])
-
-
-@app.route('/api/stats/<int:stats_id>', methods=['GET'])
-def get_stat_details(stats_id):
-    stats   = SatelliteImageStats.query.get_or_404(stats_id)
-    spectral = SpectralStatistics.query.filter_by(stats_id=stats_id).all()
-    indices  = SpectralIndexStatistics.query.filter_by(stats_id=stats_id).all()
-    return jsonify({
-        'stats_id': stats.stats_id,
-        'image_name': stats.image_name,
-        'acquisition_date': stats.acquisition_date.isoformat(),
-        'sensor_type': stats.sensor_type,
-        'resolution': stats.resolution,
-        'cloud_cover_percentage': stats.cloud_cover_percentage,
-        'spectral_bands': [{'band_name': s.band_name, 'band_number': s.band_number, 'min_value': s.min_value, 'max_value': s.max_value, 'mean_value': s.mean_value} for s in spectral],
-        'spectral_indices': [{'index_name': i.index_name, 'min_value': i.min_value, 'max_value': i.max_value, 'mean_value': i.mean_value} for i in indices],
-    })
 
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    data         = request.json
-    query        = data.get('query', '')
-    context_type = data.get('context_type')
-    context_id   = data.get('context_id')
-
-    context = None
-    if context_type == 'risk' and context_id:
-        a = RiskAssessment.query.get(context_id)
-        if a:
-            context = {'risk_level': a.risk_level, 'risk_score': a.risk_score, 'assessment_date': a.assessment_date.isoformat(), 'zone_name': a.analysis_zone.zone_name if a.analysis_zone else 'Unknown', 'weather': a.weather_conditions}
-    elif context_type == 'vegetation' and context_id:
-        idxs = SpectralIndexStatistics.query.filter_by(stats_id=context_id).all()
-        if idxs:
-            context = {'indices': [{'name': i.index_name, 'mean': i.mean_value, 'min': i.min_value, 'max': i.max_value} for i in idxs]}
-    elif context_type == 'prediction' and context_id:
-        p = PredictionResult.query.get(context_id)
-        if p:
-            context = {'filename': p.filename, 'upload_date': p.upload_date.isoformat(), 'prediction_data': p.prediction_data, 'analysis_summary': p.analysis_summary}
+    data  = request.json
+    query = data.get('query', '').strip()
+    if not query:
+        return jsonify({'answer': 'Please enter a question.'})
 
     q = query.lower()
-    if q.startswith('summarize'):
-        if 'risk' in q or 'alerts' in q:
-            assessments = RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(10).all()
-            response = summarize_risk_data(assessments)
-        elif 'vegetation' in q or 'ndvi' in q or 'indices' in q:
-            recent = SatelliteImageStats.query.order_by(SatelliteImageStats.acquisition_date.desc()).first()
-            indices = SpectralIndexStatistics.query.filter_by(stats_id=recent.stats_id).all() if recent else []
-            response = summarize_vegetation_indices(indices)
-        elif 'prediction' in q:
-            recent = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(5).all()
-            response = ("Recent Predictions:\n\n" + "".join(f"- {p.filename}: avg prob {p.prediction_data.get('avg_probability', 0):.2f}, high risk: {p.prediction_data.get('high_risk_locations', 0)}\n" for p in recent)) if recent else "No prediction results available."
-        else:
-            recent_p = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(3).all()
-            recent_a = RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(5).all()
-            pred_text = "".join(f"- {p.filename}: avg {p.prediction_data.get('avg_probability', 0):.2f}\n" for p in recent_p) if recent_p else "None available.\n"
-            response = f"FireSight Summary\n\nRecent Predictions:\n{pred_text}\n{summarize_risk_data(recent_a)}"
-    else:
-        response = generate_chat_response(query, context)
 
-    return jsonify({"answer": response})
+    # Built-in summarize shortcuts (no LLM needed)
+    if 'summarize' in q or 'summary' in q or 'current risk' in q:
+        zones = Zone.query.all()
+        if zones:
+            counts  = {l: sum(1 for z in zones if z.risk_level == l)
+                       for l in ('critical', 'high', 'medium', 'low')}
+            ndvi_vals = [z.ndvi for z in zones if z.ndvi]
+            avg_ndvi  = np.mean(ndvi_vals) if ndvi_vals else 0
+            response  = (
+                f"FireSight Risk Summary\n\n"
+                f"Monitoring {len(zones)} zones:\n"
+                f"- Critical: {counts['critical']}\n"
+                f"- High: {counts['high']}\n"
+                f"- Medium: {counts['medium']}\n"
+                f"- Low: {counts['low']}\n\n"
+                f"Average NDVI: {avg_ndvi:.2f}\n"
+            )
+            critical = [z for z in zones if z.risk_level == 'critical']
+            if critical:
+                response += f"\nMost critical zone: {critical[0].name} (score: {critical[0].risk_score:.0f}%)"
+            return jsonify({'answer': response})
+
+    # Pass zone context to LLM if query is zone/risk related
+    context = None
+    if any(kw in q for kw in ('zone', 'area', 'risk', 'ndvi', 'vegetation', 'alert')):
+        zones   = Zone.query.filter(Zone.risk_level.in_(['critical', 'high'])).all()
+        context = [{'name': z.name, 'risk_level': z.risk_level,
+                    'risk_score': z.risk_score, 'ndvi': z.ndvi,
+                    'details': z.details} for z in zones]
+
+    return jsonify({'answer': generate_chat_response(query, context)})
 
 
-@app.route('/api/summary', methods=['GET'])
-def get_summary():
-    summary_type = request.args.get('type', 'general')
-    entity_id    = request.args.get('id')
-
-    if summary_type == 'risk':
-        assessments = [RiskAssessment.query.get_or_404(entity_id)] if entity_id else RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(5).all()
-        return jsonify({"summary": summarize_risk_data(assessments)})
-
-    if summary_type == 'vegetation':
-        if entity_id:
-            indices = SpectralIndexStatistics.query.filter_by(stats_id=entity_id).all()
-        else:
-            recent = SatelliteImageStats.query.order_by(SatelliteImageStats.acquisition_date.desc()).first()
-            indices = SpectralIndexStatistics.query.filter_by(stats_id=recent.stats_id).all() if recent else []
-        return jsonify({"summary": summarize_vegetation_indices(indices)})
-
-    if summary_type == 'prediction':
-        if entity_id:
-            p = PredictionResult.query.get_or_404(entity_id)
-            summary = (f"Prediction: {p.filename}\n- Uploaded: {p.upload_date.strftime('%Y-%m-%d %H:%M')}\n- Locations: {p.prediction_data.get('num_locations')}\n- Avg probability: {p.prediction_data.get('avg_probability', 0):.2f}\n- High risk: {p.prediction_data.get('high_risk_locations', 0)}\n\n{p.analysis_summary}")
-        else:
-            recent = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(5).all()
-            summary = ("Recent Predictions:\n\n" + "".join(f"- {p.filename}: avg {p.prediction_data.get('avg_probability', 0):.2f}, high risk: {p.prediction_data.get('high_risk_locations', 0)}\n" for p in recent)) if recent else "No predictions available."
-        return jsonify({"summary": summary})
-
-    # general
-    recent_p = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(3).all()
-    recent_a = RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(5).all()
-    pred_text = "".join(f"- {p.filename}: avg {p.prediction_data.get('avg_probability', 0):.2f}\n" for p in recent_p) if recent_p else "No recent predictions.\n"
-    return jsonify({"summary": f"FireSight Summary\n\nRecent Predictions:\n{pred_text}\n{summarize_risk_data(recent_a)}"})
-
+# ── Startup ────────────────────────────────────────────────────────────────────
 
 def init_db():
-    with db.engine.connect() as conn:
-        conn.execute(db.text('CREATE EXTENSION IF NOT EXISTS postgis'))
-        conn.commit()
     db.create_all()
+    seed_data()
 
 
 if __name__ == '__main__':

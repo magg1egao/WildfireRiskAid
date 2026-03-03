@@ -86,6 +86,11 @@ frontend/dist-ssr/
 *.swo
 *~
 
+# ─── Databases (runtime-generated) ───────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
 # ─── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 npm-debug.log*

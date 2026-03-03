@@ -25,22 +25,41 @@ function formatFileSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function RiskBar({ label, count, total, color }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 3 }}>
+        <span>{label}</span>
+        <span style={{ color: 'var(--secondary)' }}>{count} ({pct}%)</span>
+      </div>
+      <div style={{ background: 'rgba(0,0,0,0.08)', borderRadius: 4, height: 8 }}>
+        <div style={{ background: color, width: `${pct}%`, height: 8, borderRadius: 4, transition: 'width 0.4s' }} />
+      </div>
+    </div>
+  )
+}
+
 export default function Upload() {
-  const navigate = useNavigate()
+  const navigate    = useNavigate()
   const fileInputRef = useRef(null)
 
-  const [dataType, setDataType] = useState('feature_data')
-  const [region, setRegion] = useState('from_csv')
-  const [runModel, setRunModel] = useState(true)
-  const [file, setFile] = useState(null)
-  const [dragOver, setDragOver] = useState(false)
+  const [dataType,   setDataType]   = useState('feature_data')
+  const [region,     setRegion]     = useState('from_csv')
+  const [runModel,   setRunModel]   = useState(true)
+  const [file,       setFile]       = useState(null)
+  const [dragOver,   setDragOver]   = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [error,      setError]      = useState('')
+  const [result,     setResult]     = useState(null)
 
   const info = DATA_TYPE_INFO[dataType]
 
   function handleFile(files) {
-    if (files && files.length > 0) setFile(files[0])
+    if (files && files.length > 0) {
+      setFile(files[0])
+      setResult(null)
+    }
   }
 
   function handleDrop(e) {
@@ -53,22 +72,23 @@ export default function Upload() {
     e.preventDefault()
     if (!file) { setError('Please select a CSV file.'); return }
     setError('')
+    setResult(null)
     setSubmitting(true)
 
     const formData = new FormData()
-    formData.append('csvFile', file)
+    formData.append('csvFile',     file)
     formData.append('csvDataType', dataType)
-    formData.append('csvRegion', region)
+    formData.append('csvRegion',   region)
     if (runModel) formData.append('runModel', 'on')
 
     try {
-      const res = await fetch('/upload/csv', { method: 'POST', body: formData })
+      const res  = await fetch('/upload/csv', { method: 'POST', body: formData })
       const data = await res.json()
       if (data.success) {
+        setResult(data)
         if (data.gpt_analysis) {
           localStorage.setItem('firesight_gpt_analysis', data.gpt_analysis)
         }
-        navigate('/')
       } else {
         setError(data.error || 'Upload failed.')
       }
@@ -79,6 +99,87 @@ export default function Upload() {
     }
   }
 
+  function handleReset() {
+    setFile(null)
+    setResult(null)
+    setError('')
+  }
+
+  // ── Results panel ─────────────────────────────────────────────────────────
+  if (result) {
+    const pd = result.prediction_data
+    return (
+      <div className="content">
+        <header>
+          <h2>Upload Results</h2>
+        </header>
+        <div className="upload-container">
+          <div className="card upload-card">
+            <div className="card-header" style={{ background: '#e8f5e9' }}>
+              <h3 style={{ color: 'var(--primary-dark)' }}>
+                <i className="fas fa-check-circle" style={{ marginRight: 8 }}></i>
+                {result.message}
+              </h3>
+            </div>
+            <div className="card-body">
+              {pd ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+                    {[
+                      { label: 'Locations Analysed', value: pd.num_locations },
+                      { label: 'Avg. Probability',   value: `${(pd.avg_probability * 100).toFixed(1)}%` },
+                      { label: 'Max Probability',    value: `${(pd.max_probability * 100).toFixed(1)}%` },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ background: '#f5f7f9', borderRadius: 6, padding: '12px 16px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginBottom: 4 }}>{label}</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginBottom: 20 }}>
+                    <h4 style={{ marginBottom: 10, fontSize: '0.9rem', color: 'var(--secondary)' }}>RISK DISTRIBUTION</h4>
+                    <RiskBar label="High Risk (>70%)"    count={pd.high_risk_locations}   total={pd.num_locations} color="var(--danger)" />
+                    <RiskBar label="Medium Risk (40–70%)" count={pd.medium_risk_locations} total={pd.num_locations} color="var(--warning)" />
+                    <RiskBar label="Low Risk (<40%)"     count={pd.low_risk_locations}    total={pd.num_locations} color="var(--success)" />
+                  </div>
+
+                  {result.gpt_analysis && (
+                    <div style={{ background: '#f0f8ff', border: '1px solid #add8e6', borderRadius: 6, padding: '14px 16px', marginBottom: 20 }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Analysis
+                      </div>
+                      <p style={{ fontSize: '0.875rem', margin: 0, lineHeight: 1.6 }}>{result.gpt_analysis}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={{ color: 'var(--secondary)' }}>{result.message}</p>
+              )}
+
+              <div className="form-actions">
+                <button className="btn btn-primary" onClick={() => navigate('/')}>
+                  <i className="fas fa-chart-bar" style={{ marginRight: 6 }}></i>
+                  View Dashboard
+                </button>
+                {result.gpt_analysis && (
+                  <button className="btn btn-outline" onClick={() => navigate('/chat')}>
+                    <i className="fas fa-robot" style={{ marginRight: 6 }}></i>
+                    Discuss with AI
+                  </button>
+                )}
+                <button className="btn btn-outline" onClick={handleReset}>
+                  Upload Another
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Upload form ───────────────────────────────────────────────────────────
   return (
     <div className="content">
       <header>
@@ -220,7 +321,7 @@ export default function Upload() {
                 <ul className="help-list">
                   <li><strong>Required Format:</strong> CSV with header row</li>
                   <li><strong>Required Columns:</strong> NDVI, NBR, NDWI, Temp, Wind_Dir, Wind_Spd, Humidity, Elev, Slope, Latitude, Longitude</li>
-                  <li><strong>Note:</strong> Make sure all numeric fields contain valid numbers and there are no missing values</li>
+                  <li><strong>Note:</strong> All numeric fields must contain valid numbers with no missing values</li>
                 </ul>
               </div>
             </div>

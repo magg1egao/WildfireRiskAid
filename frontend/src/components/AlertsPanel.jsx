@@ -1,34 +1,15 @@
-const alerts = [
-  {
-    name: 'Northridge Canyon',
-    severity: 'critical',
-    label: 'Critical (89%)',
-    details: 'Extreme dry conditions, increasing winds, and declining vegetation health (NDVI: 0.37)',
-    action: 'Deploy Resources',
-    btnClass: 'btn-danger',
-    pulse: true,
-  },
-  {
-    name: 'Eastern Foothills',
-    severity: 'high',
-    label: 'High (72%)',
-    details: 'Decreasing moisture levels, temperatures expected to rise to 92°F today',
-    action: 'Monitor',
-    btnClass: 'btn-warning',
-    pulse: false,
-  },
-  {
-    name: 'Pine Ridge Forest',
-    severity: 'high',
-    label: 'High (68%)',
-    details: 'Limited access routes, dense vegetation with declining moisture content',
-    action: 'Monitor',
-    btnClass: 'btn-warning',
-    pulse: false,
-  },
-]
+import { useState, useEffect } from 'react'
 
 export default function AlertsPanel() {
+  const [alerts, setAlerts] = useState([])
+
+  useEffect(() => {
+    fetch('/api/alerts')
+      .then((r) => r.json())
+      .then(setAlerts)
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="panel panel-danger">
       <div className="panel-header">
@@ -37,20 +18,32 @@ export default function AlertsPanel() {
           Critical Alerts
         </div>
         <div className="panel-actions">
-          <button className="btn btn-text">View All</button>
+          <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+            {alerts.length} active
+          </span>
         </div>
       </div>
       <div className="panel-body">
         <div className="alert-list">
+          {alerts.length === 0 && (
+            <div className="text-muted" style={{ textAlign: 'center', padding: '1rem' }}>
+              No active alerts
+            </div>
+          )}
           {alerts.map((alert) => (
-            <div key={alert.name} className={`alert-item ${alert.severity}${alert.pulse ? ' pulse' : ''}`}>
+            <div
+              key={alert.name}
+              className={`alert-item ${alert.severity}${alert.severity === 'critical' ? ' pulse' : ''}`}
+            >
               <div className="alert-header">
                 <div className="alert-title">
                   {alert.name}
                   <span className={`alert-severity ${alert.severity}`}>{alert.label}</span>
                 </div>
                 <div className="alert-actions">
-                  <button className={`btn btn-sm ${alert.btnClass}`}>{alert.action}</button>
+                  <button className={`btn btn-sm ${alert.severity === 'critical' ? 'btn-danger' : 'btn-warning'}`}>
+                    {alert.action}
+                  </button>
                 </div>
               </div>
               <div className="alert-details">{alert.details}</div>

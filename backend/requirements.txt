@@ -1,12 +1,17 @@
 Flask
 flask-cors
 flask-sqlalchemy
-geoalchemy2
-psycopg2-binary
 python-dotenv
-gpt4all
+werkzeug
 joblib
-xgboost
-scikit-learn
 numpy
 pandas
+xgboost
+scikit-learn
+
+# Optional — AI assistant (requires ~5 GB model file)
+# gpt4all
+
+# Optional — PostgreSQL backend (SQLite used by default)
+# psycopg2-binary
+# geoalchemy2

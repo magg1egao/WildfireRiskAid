@@ -1,49 +1,24 @@
+import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const RISK_COLORS = {
   critical: '#D32F2F',
-  high: '#FF9800',
-  medium: '#FFC107',
-  low: '#8BC34A',
+  high:     '#FF9800',
+  medium:   '#FFC107',
+  low:      '#8BC34A',
 }
 
-const zones = [
-  {
-    name: 'Northridge Canyon',
-    coords: [[34.2, -118.5], [34.3, -118.5], [34.3, -118.4], [34.2, -118.4]],
-    risk: 'critical',
-    ndvi: '0.37',
-    terrain: 'Canyon',
-    vegetation: 'Dense',
-  },
-  {
-    name: 'Eastern Foothills',
-    coords: [[34.1, -118.2], [34.2, -118.2], [34.2, -118.1], [34.1, -118.1]],
-    risk: 'high',
-    ndvi: '0.52',
-    terrain: 'Foothills',
-    vegetation: 'Moderate',
-  },
-  {
-    name: 'Pine Ridge Forest',
-    coords: [[34.0, -118.3], [34.1, -118.3], [34.1, -118.2], [34.0, -118.2]],
-    risk: 'high',
-    ndvi: '0.48',
-    terrain: 'Ridge',
-    vegetation: 'Dense',
-  },
-  {
-    name: 'Valley Grasslands',
-    coords: [[33.9, -118.4], [34.0, -118.4], [34.0, -118.3], [33.9, -118.3]],
-    risk: 'medium',
-    ndvi: '0.61',
-    terrain: 'Valley',
-    vegetation: 'Sparse',
-  },
-]
-
 export default function RiskMap() {
+  const [zones, setZones] = useState([])
+
+  useEffect(() => {
+    fetch('/api/zones')
+      .then((r) => r.json())
+      .then(setZones)
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="map-container" style={{ position: 'relative' }}>
       <MapContainer
@@ -57,32 +32,27 @@ export default function RiskMap() {
         />
         {zones.map((zone) => (
           <Polygon
-            key={zone.name}
-            positions={zone.coords}
+            key={zone.zone_id}
+            positions={zone.coordinates}
             pathOptions={{
-              color: RISK_COLORS[zone.risk],
-              fillColor: RISK_COLORS[zone.risk],
+              color:       RISK_COLORS[zone.risk_level] || '#8BC34A',
+              fillColor:   RISK_COLORS[zone.risk_level] || '#8BC34A',
               fillOpacity: 0.7,
-              weight: 2,
+              weight:      2,
             }}
           >
             <Popup>
               <div className="map-popup">
                 <div className="popup-title">{zone.name}</div>
-                <div className={`popup-risk ${zone.risk}`}>Risk: {zone.risk}</div>
+                <div className={`popup-risk ${zone.risk_level}`}>
+                  Risk: {zone.risk_level} ({zone.risk_score?.toFixed(0)}%)
+                </div>
                 <div className="popup-details">
-                  <div className="popup-detail">
-                    <span>NDVI:</span>
-                    <span>{zone.ndvi}</span>
-                  </div>
-                  <div className="popup-detail">
-                    <span>Terrain:</span>
-                    <span>{zone.terrain}</span>
-                  </div>
-                  <div className="popup-detail">
-                    <span>Vegetation:</span>
-                    <span>{zone.vegetation}</span>
-                  </div>
+                  <div className="popup-detail"><span>NDVI:</span><span>{zone.ndvi?.toFixed(2)}</span></div>
+                  <div className="popup-detail"><span>NBR:</span><span>{zone.nbr?.toFixed(2)}</span></div>
+                  <div className="popup-detail"><span>NDWI:</span><span>{zone.ndwi?.toFixed(2)}</span></div>
+                  <div className="popup-detail"><span>Terrain:</span><span>{zone.terrain}</span></div>
+                  <div className="popup-detail"><span>Vegetation:</span><span>{zone.vegetation}</span></div>
                 </div>
               </div>
             </Popup>
@@ -95,9 +65,9 @@ export default function RiskMap() {
         <div className="legend-items">
           {[
             { risk: 'critical', label: 'Critical (>80%)' },
-            { risk: 'high', label: 'High (60–80%)' },
-            { risk: 'medium', label: 'Medium (40–60%)' },
-            { risk: 'low', label: 'Low (<40%)' },
+            { risk: 'high',     label: 'High (60–80%)' },
+            { risk: 'medium',   label: 'Medium (40–60%)' },
+            { risk: 'low',      label: 'Low (<40%)' },
           ].map(({ risk, label }) => (
             <div className="legend-item" key={risk}>
               <div className="legend-color" style={{ backgroundColor: RISK_COLORS[risk] }}></div>
