@@ -119,12 +119,18 @@ export default function IndicesChart() {
       </div>
       <div className="panel-body">
         <div className="chart-container">
-          {data ? (
-            <Line data={buildChartData(data)} options={options} />
-          ) : (
+          {!data ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--secondary)' }}>
               Loading...
             </div>
+          ) : data.labels.length < 2 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.5rem', color: 'var(--secondary)', textAlign: 'center', padding: '1rem' }}>
+              <i className="fas fa-chart-line" style={{ fontSize: '1.5rem', opacity: 0.3 }}></i>
+              <span style={{ fontSize: '0.85rem' }}>No trend data yet</span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Upload datasets over time to see vegetation and moisture trends</span>
+            </div>
+          ) : (
+            <Line data={buildChartData(data)} options={options} />
           )}
         </div>
         {data && (

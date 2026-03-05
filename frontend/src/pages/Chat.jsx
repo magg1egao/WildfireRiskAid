@@ -1,4 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
+import Footer from '../components/Footer'
+
+const RISK_COLORS = {
+  Critical: 'var(--risk-critical)',
+  High:     'var(--risk-high)',
+  Medium:   'var(--risk-medium)',
+  Low:      'var(--risk-low)',
+}
 
 const SUGGESTION_GROUPS = [
   {
@@ -48,8 +56,16 @@ export default function Chat() {
   const [messages, setMessages] = useState([INITIAL_MSG])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [stats, setStats] = useState(null)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    fetch('/api/dashboard-stats')
+      .then((r) => r.json())
+      .then(setStats)
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -120,15 +136,21 @@ export default function Chat() {
           <div className="chat-context-label">Current Conditions</div>
           <div className="chat-context-card">
             <span className="chat-context-card-label">Risk Level</span>
-            <span className="chat-context-card-value" style={{ color: 'var(--risk-high)' }}>HIGH</span>
+            <span className="chat-context-card-value" style={{ color: RISK_COLORS[stats?.risk_level] || 'var(--secondary)' }}>
+              {stats?.risk_level?.toUpperCase() ?? '—'}
+            </span>
           </div>
           <div className="chat-context-card">
             <span className="chat-context-card-label">Active Alerts</span>
-            <span className="chat-context-card-value" style={{ color: 'var(--danger)' }}>3</span>
+            <span className="chat-context-card-value" style={{ color: stats?.active_alerts > 0 ? 'var(--danger)' : 'var(--success)' }}>
+              {stats?.active_alerts ?? '—'}
+            </span>
           </div>
           <div className="chat-context-card">
             <span className="chat-context-card-label">Avg NDVI</span>
-            <span className="chat-context-card-value" style={{ color: 'var(--warning)' }}>0.52</span>
+            <span className="chat-context-card-value" style={{ color: 'var(--warning)' }}>
+              {stats?.avg_ndvi ?? '—'}
+            </span>
           </div>
         </div>
 
@@ -213,6 +235,7 @@ export default function Chat() {
           </div>
           <div className="chat-composer-hint">Enter to send · Shift+Enter for new line</div>
         </div>
+        <Footer />
       </div>
     </div>
   )

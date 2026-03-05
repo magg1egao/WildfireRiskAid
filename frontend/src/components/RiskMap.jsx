@@ -1,12 +1,35 @@
 import { useState, useEffect } from 'react'
-import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, Polygon, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
+function MapInvalidator() {
+  const map = useMap()
+  useEffect(() => {
+    const container = map.getContainer()
+    const ro = new ResizeObserver(() => map.invalidateSize())
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [map])
+  return null
+}
+
+function MapFitter({ zones }) {
+  const map = useMap()
+  useEffect(() => {
+    const coords = zones
+      .filter((z) => Array.isArray(z.coordinates) && z.coordinates.length >= 3)
+      .flatMap((z) => z.coordinates)
+    if (coords.length === 0) return
+    map.fitBounds(coords, { padding: [30, 30] })
+  }, [zones, map])
+  return null
+}
+
 const RISK_COLORS = {
-  critical: '#D32F2F',
-  high:     '#FF9800',
-  medium:   '#FFC107',
-  low:      '#8BC34A',
+  critical: '#DC2626',
+  high:     '#F59E0B',
+  medium:   '#FBC02D',
+  low:      '#22C55E',
 }
 
 export default function RiskMap() {
@@ -26,11 +49,13 @@ export default function RiskMap() {
         zoom={10}
         style={{ height: '100%', minHeight: '400px', width: '100%' }}
       >
+        <MapInvalidator />
+        <MapFitter zones={zones} />
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {zones.map((zone) => (
+        {zones.filter((zone) => Array.isArray(zone.coordinates) && zone.coordinates.length >= 3).map((zone) => (
           <Polygon
             key={zone.zone_id}
             positions={zone.coordinates}

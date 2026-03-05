@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Footer from '../components/Footer'
 
 const DATA_TYPE_INFO = {
   feature_data: {
@@ -182,18 +183,10 @@ export default function Upload() {
   // ── Upload form ───────────────────────────────────────────────────────────
   return (
     <div className="content">
-      <header className="page-header">
-        <div className="page-header-title">
-          <i className="fas fa-cloud-upload-alt"></i>
-          <h2>Upload CSV Data</h2>
-        </div>
-        <p className="page-header-subtitle">Import geospatial datasets for wildfire risk prediction and analysis</p>
-      </header>
-
       <div className="upload-container">
         <div className="card upload-card">
           <div className="card-header">
-            <h3>Upload CSV Data</h3>
+            <h3><i className="fas fa-cloud-upload-alt" style={{ marginRight: '0.5rem', color: 'var(--primary)' }}></i>Upload CSV Data</h3>
           </div>
           <div className="card-body">
             <form className="upload-form" onSubmit={handleSubmit}>
@@ -350,6 +343,7 @@ export default function Upload() {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   )
 }
