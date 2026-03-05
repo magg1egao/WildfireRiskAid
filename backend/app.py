@@ -358,6 +358,7 @@ def upload_csv():
                 probs = xgb_model.predict_proba(df[required])[:, 1]
                 df['Wildfire_Probability'] = probs
                 gpt_analysis = analyze_with_llm(df)
+                populate_dashboard_from_upload(df, filename)
 
                 pred_data = {
                     'num_locations':        len(df),
@@ -383,6 +384,7 @@ def upload_csv():
                     'wildfire_predictions': df.head(100).to_dict(orient='records'),
                 })
 
+            populate_dashboard_from_upload(df, filename)
             return jsonify({'success': True, 'message': 'File uploaded', 'rows': len(df), 'columns': list(df.columns)})
 
         elif data_type == 'coordinates':
@@ -458,11 +460,96 @@ def chat():
     return jsonify({'answer': generate_chat_response(query, context)})
 
 
+@app.route('/api/has-data', methods=['GET'])
+def has_data():
+    return jsonify({'has_data': Zone.query.count() > 0})
+
+
+@app.route('/api/load-demo', methods=['POST'])
+def load_demo():
+    Zone.query.delete()
+    VegetationTrend.query.delete()
+    db.session.commit()
+    seed_data()
+    return jsonify({'success': True})
+
+
+def populate_dashboard_from_upload(df, filename):
+    """Replace dashboard zones with results derived from an uploaded CSV."""
+    Zone.query.delete()
+    VegetationTrend.query.delete()
+
+    base_name  = os.path.splitext(filename)[0]
+    has_coords = 'Latitude' in df.columns and 'Longitude' in df.columns
+    has_probs  = 'Wildfire_Probability' in df.columns
+
+    def bbox(subset):
+        if not has_coords or subset.empty:
+            return None
+        lats = subset['Latitude'].astype(float)
+        lons = subset['Longitude'].astype(float)
+        return [
+            [float(lats.min()), float(lons.min())],
+            [float(lats.min()), float(lons.max())],
+            [float(lats.max()), float(lons.max())],
+            [float(lats.max()), float(lons.min())],
+        ]
+
+    def col_avg(subset, name):
+        return float(subset[name].mean()) if name in subset.columns else None
+
+    if has_probs:
+        tiers = [
+            (df[df['Wildfire_Probability'] > 0.7],                                              'high'),
+            (df[(df['Wildfire_Probability'] > 0.4) & (df['Wildfire_Probability'] <= 0.7)],      'medium'),
+            (df[df['Wildfire_Probability'] <= 0.4],                                             'low'),
+        ]
+        for subset, risk_level in tiers:
+            if subset.empty:
+                continue
+            avg_prob = float(subset['Wildfire_Probability'].mean())
+            if risk_level == 'high' and avg_prob > 0.85:
+                risk_level = 'critical'
+            db.session.add(Zone(
+                name=f"{risk_level.capitalize()} Risk — {base_name}",
+                zone_type=risk_level.capitalize(),
+                coordinates=bbox(subset),
+                risk_level=risk_level,
+                risk_score=round(avg_prob * 100, 1),
+                ndvi=col_avg(subset, 'NDVI'),
+                nbr=col_avg(subset, 'NBR'),
+                ndwi=col_avg(subset, 'NDWI'),
+                terrain='Mixed', vegetation='Mixed',
+                details=f"{len(subset)} location(s). Avg probability: {avg_prob * 100:.1f}%.",
+            ))
+    else:
+        db.session.add(Zone(
+            name=f"Uploaded Zone — {base_name}",
+            zone_type='Mixed',
+            coordinates=bbox(df),
+            risk_level='medium',
+            risk_score=50.0,
+            ndvi=col_avg(df, 'NDVI'), nbr=col_avg(df, 'NBR'), ndwi=col_avg(df, 'NDWI'),
+            terrain='Mixed', vegetation='Mixed',
+            details=f"{len(df)} location(s) uploaded. Run the model for risk predictions.",
+        ))
+
+    if all(c in df.columns for c in ['NDVI', 'NBR', 'NDWI']):
+        db.session.add(VegetationTrend(
+            label=base_name[:20],
+            ndvi=col_avg(df, 'NDVI'),
+            nbr=col_avg(df, 'NBR'),
+            ndwi=col_avg(df, 'NDWI'),
+            period_days=7, sort_order=1,
+        ))
+
+    db.session.commit()
+
+
 # ── Startup ────────────────────────────────────────────────────────────────────
 
 def init_db():
     db.create_all()
-    seed_data()
 
 
 if __name__ == '__main__':
