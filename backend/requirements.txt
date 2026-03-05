@@ -8,10 +8,5 @@ numpy
 pandas
 xgboost
 scikit-learn
+requests
 
-# Optional — AI assistant (requires ~5 GB model file)
-# gpt4all
-
-# Optional — PostgreSQL backend (SQLite used by default)
-# psycopg2-binary
-# geoalchemy2

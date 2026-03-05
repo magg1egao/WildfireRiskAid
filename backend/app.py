@@ -15,14 +15,19 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# ── Optional heavy dependencies ────────────────────────────────────────────────
+# ── Ollama (local LLM) ─────────────────────────────────────────────────────────
 
-try:
-    from gpt4all import GPT4All
-    _model_file = os.getenv('GPT4ALL_MODEL', 'Meta-Llama-3-8B-Instruct.Q4_0.gguf')
-    llm = GPT4All(_model_file)
-except Exception:
-    llm = None
+import requests as _requests
+
+OLLAMA_URL   = os.getenv('OLLAMA_URL',   'http://localhost:11434')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma2:2b')
+
+def _ollama_available():
+    try:
+        _requests.get(f'{OLLAMA_URL}/api/tags', timeout=2)
+        return True
+    except Exception:
+        return False
 
 _xgb_path = os.getenv(
     'XGB_MODEL_PATH',
@@ -160,25 +165,42 @@ def seed_data():
 
 # ── AI helpers ─────────────────────────────────────────────────────────────────
 
+def _ollama_generate(prompt):
+    payload = {
+        'model': OLLAMA_MODEL,
+        'prompt': prompt,
+        'stream': False,
+        'options': {'num_predict': 1024},
+    }
+    resp = _requests.post(f'{OLLAMA_URL}/api/generate', json=payload, timeout=120)
+    resp.raise_for_status()
+    return resp.json().get('response', '').strip()
+
+
 def generate_chat_response(query, context=None):
-    if llm is None:
+    if not _ollama_available():
         return (
-            "The AI assistant requires the GPT4All model file "
-            "(Meta-Llama-3-8B-Instruct.Q4_0.gguf). Set GPT4ALL_MODEL in your .env file "
-            "to enable it. All other dashboard features are fully functional."
+            f"The AI assistant requires Ollama to be running locally with the {OLLAMA_MODEL} model. "
+            "Install Ollama (https://ollama.com), then run: "
+            f"ollama pull {OLLAMA_MODEL}. "
+            "All other dashboard features are fully functional."
         )
     system_prompt = (
         "You are FireSight AI Assistant, an expert in wildfire risk assessment. "
         "Provide concise, actionable information about wildfire risks and prevention strategies."
     )
     user_prompt = f"Context: {json.dumps(context)}\n\nUser query: {query}" if context else query
-    return llm.generate(f"{system_prompt}\n\n{user_prompt}", max_tokens=1024).strip()
+    try:
+        return _ollama_generate(f"{system_prompt}\n\n{user_prompt}")
+    except Exception as e:
+        return f"Error contacting Ollama: {str(e)}"
 
 
-def analyze_with_gpt4all(data):
-    if llm is None:
-        num = len(data)
-        avg_ndvi = f"{data['NDVI'].mean():.3f}" if 'NDVI' in data.columns else 'N/A'
+def analyze_with_llm(data):
+    num = len(data)
+    avg_ndvi = f"{data['NDVI'].mean():.3f}" if 'NDVI' in data.columns else 'N/A'
+
+    if not _ollama_available():
         if 'Wildfire_Probability' in data.columns:
             probs = data['Wildfire_Probability']
             high = int((probs > 0.7).sum())
@@ -187,7 +209,7 @@ def analyze_with_gpt4all(data):
             return (
                 f"Processed {num} locations. Average NDVI: {avg_ndvi}. "
                 f"Risk breakdown — High (>70%): {high}, Medium (40–70%): {med}, Low (<40%): {low}. "
-                "AI narrative analysis unavailable — model file not loaded."
+                "AI narrative analysis unavailable — Ollama not running."
             )
         return f"Processed {num} locations. Average NDVI: {avg_ndvi}. AI analysis unavailable."
 
@@ -196,7 +218,7 @@ def analyze_with_gpt4all(data):
 
     prompt = (
         f"Analyze this wildfire risk data:\n"
-        f"Dataset: {len(data)} locations\n"
+        f"Dataset: {num} locations\n"
         f"NDVI: {col('NDVI')}, NBR: {col('NBR')}, NDWI: {col('NDWI')}\n"
         f"Temp: {col('Temp')}°C, Humidity: {col('Humidity')}%, Wind: {col('Wind_Spd')} km/h\n"
     )
@@ -207,7 +229,10 @@ def analyze_with_gpt4all(data):
             f"High risk (>70%): {(probs > 0.7).sum()}\n"
         )
     prompt += "\nProvide: risk assessment, key factors, and monitoring recommendations."
-    return llm.generate(prompt, max_tokens=1024).strip()
+    try:
+        return _ollama_generate(prompt)
+    except Exception as e:
+        return f"Error contacting Ollama: {str(e)}"
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -332,7 +357,7 @@ def upload_csv():
 
                 probs = xgb_model.predict_proba(df[required])[:, 1]
                 df['Wildfire_Probability'] = probs
-                gpt_analysis = analyze_with_gpt4all(df)
+                gpt_analysis = analyze_with_llm(df)
 
                 pred_data = {
                     'num_locations':        len(df),

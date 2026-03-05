@@ -182,8 +182,12 @@ export default function Upload() {
   // ── Upload form ───────────────────────────────────────────────────────────
   return (
     <div className="content">
-      <header>
-        <h2>Upload CSV Data</h2>
+      <header className="page-header">
+        <div className="page-header-title">
+          <i className="fas fa-cloud-upload-alt"></i>
+          <h2>Upload CSV Data</h2>
+        </div>
+        <p className="page-header-subtitle">Import geospatial datasets for wildfire risk prediction and analysis</p>
       </header>
 
       <div className="upload-container">
