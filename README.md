@@ -1,105 +1,181 @@
-# FireSight 🔥
-## Wildfire Risk Assessment Dashboard
+# FireSight — Wildfire Risk Assessment Dashboard
 
-FireSight is a web-based wildfire risk assessment tool that combines satellite-derived vegetation data, machine learning predictions, and a local AI assistant to help analysts and emergency responders monitor and act on fire-prone areas in real time.
+A full-stack wildfire risk assessment tool built for offline, field-deployable use. Upload satellite-derived CSV data, run an XGBoost wildfire prediction model, and analyze results through an interactive dashboard and a locally-run AI assistant — no internet connection required.
 
-## The Problem 🌍
+![Dashboard](docs/screenshots/dashboard.png)
 
-Wildfires are becoming more frequent and harder to predict. Early detection depends on monitoring vegetation health, moisture levels, and weather conditions across large geographic areas — data that is difficult to interpret quickly without specialized tools. FireSight aims to reduce the gap between raw satellite data and actionable risk decisions.
+---
 
-## Features 🌟
+## Why This Exists
 
-- **Interactive Risk Map**: Visualizes fire-risk zones color-coded by severity (Critical / High / Medium / Low) with per-zone popups showing NDVI, terrain, and vegetation details
-- **Vegetation & Moisture Trends**: Tracks NDVI, NBR, and NDWI indices over 7, 30, and 90-day windows with live trend charts
-- **ML-Based Predictions**: Uploads field or satellite CSV data and runs an XGBoost classifier to estimate wildfire probability per location
-- **AI Assistant**: A locally-run LLM (Meta-Llama-3-8B via GPT4All) answers natural language questions about risk data, vegetation health, and uploaded predictions — no data leaves the machine
-- **Active Alerts Panel**: Surfaces critical and high-risk zones with severity badges and recommended actions
+Wildfire responders and field analysts often operate in areas with limited or no internet connectivity. Existing tools rely on cloud services, making them unavailable exactly when they're needed most. FireSight is designed to run entirely on local hardware — from a laptop to a Raspberry Pi — processing data and serving AI-assisted analysis without any external dependencies.
 
-## Technical Architecture 🔧
+---
 
-### Satellite Data Pipeline
-- Imagery sourced from **Sentinel-2** and **Landsat 8** via **Google Earth Engine (GEE)**
-- Spectral indices extracted per sampled location:
+## Features
 
-| Index | Measures |
-|-------|----------|
-| NDVI  | Vegetation health — low values indicate dry or stressed vegetation |
-| NBR   | Burn ratio — low values suggest burn signatures or fuel accumulation |
-| NDWI  | Moisture content — low values indicate dry, fire-prone conditions |
+- **Upload-Driven Dashboard** — the dashboard populates from your data. Upload a CSV of field or satellite measurements and the risk map, alert panel, and statistics update automatically.
+- **XGBoost Wildfire Prediction** — classifies each location's wildfire probability from spectral indices (NDVI, NBR, NDWI) and weather features (temperature, humidity, wind speed, elevation, slope).
+- **Interactive Risk Map** — zones are color-coded by severity (Critical / High / Medium / Low) with per-zone popups showing indices and terrain details. Map auto-fits to uploaded data bounds.
+- **Active Alerts Panel** — surfaces critical and high-risk zones with severity badges and recommended actions.
+- **Vegetation & Moisture Trends** — tracks NDVI, NBR, and NDWI over 7, 30, and 90-day windows.
+- **Local AI Assistant** — powered by Ollama running `gemma2:2b` (or any compatible model). Answers natural language questions about risk data and uploaded predictions. No data leaves the machine.
+- **Demo Mode** — load built-in seed data to explore the interface without a real dataset.
 
-- Dataset covers Alberta wildfire seasons (May–September 2023/2024), ~5,000 sampled geographic points
+---
 
-### Predictive Model
-- **XGBoost classifier** trained on satellite + weather features: NDVI, NBR, NDWI, temperature, wind speed/direction, humidity, elevation, slope
-- Fire-risk labels generated via vegetation threshold rule (NDVI < 0.2 and NBR < 0.3 → high-risk) in the absence of ground-truth fire data
-- ~99% accuracy on labeled dataset; **Random Forest** baseline also trained for comparison
+## Screenshots
 
-### Backend
-- **Flask** REST API with **PostgreSQL + PostGIS** database
-- Stores satellite image stats, spectral index summaries, analysis zones, and prediction results
-- Key endpoints:
-  - `POST /upload/csv` — accepts field data CSV, runs XGBoost predictions, stores results
-  - `POST /api/chat` — routes natural language queries to the local LLM
-  - `GET /api/stats` / `GET /api/predictions` — retrieve stored analysis data
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
 
-### Frontend
-- **React** SPA (Vite) with three pages:
-  - **Dashboard** — risk map (react-leaflet), alerts panel, NDVI/NBR/NDWI trend chart (Chart.js)
-  - **Upload** — drag-and-drop CSV upload form with data type selection and model toggle
-  - **AI Assistant** — full-page chat interface with context sidebar showing current risk conditions and grouped suggestion prompts
+### Upload Data
+![Upload](docs/screenshots/upload.png)
 
-## System Requirements 💻
+### AI Assistant
+![AI Assistant](docs/screenshots/chat.png)
 
-- **Python**: 3.9+
-- **Node.js**: 18+
-- **Database**: PostgreSQL 14+ with PostGIS extension
-- **Storage**: ~1GB for XGBoost model; ~5GB for GPT4All model (Meta-Llama-3-8B)
-- **RAM**: 8GB minimum; 16GB recommended when running the local LLM
+---
 
-## Project Structure 🗂️
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, react-leaflet, Chart.js |
+| Backend | Flask, SQLAlchemy, SQLite |
+| ML Model | XGBoost classifier (scikit-learn pipeline) |
+| AI Assistant | Ollama (local inference, `gemma2:2b` default) |
+| Map tiles | OpenStreetMap via Leaflet |
+
+---
+
+## Project Structure
 
 ```
 WildfireRiskAid/
-├── backend/                  # Flask API, database models, ML inference
-│   ├── app.py
+├── backend/
+│   ├── app.py               # Flask API, DB models, ML inference, Ollama integration
 │   ├── requirements.txt
-│   └── uploads/
-├── frontend/                 # React SPA (Vite)
+│   └── uploads/             # Uploaded CSV files
+├── frontend/
 │   ├── src/
-│   │   ├── pages/            # Dashboard, Upload, Chat
-│   │   └── components/       # Navbar, RiskMap, AlertsPanel, IndicesChart, ChatPanel
-│   └── vite.config.js
-├── predictive_model/         # Model training, data extraction, preprocessing
-│   ├── XgBoost/
-│   ├── RandomForest/
-│   ├── DataExtraction/       # Google Earth Engine scripts
-│   └── Preprocessing/
-└── legacy/                   # Original Jinja2 templates (pre-React)
+│   │   ├── pages/           # Dashboard, Upload, Chat
+│   │   └── components/      # Navbar, RiskMap, AlertsPanel, IndicesChart, Footer
+│   └── vite.config.js       # Proxy config (/api and /upload → localhost:5000)
+├── predictive_model/
+│   ├── XgBoost/             # Trained model (.joblib) + training notebook
+│   ├── RandomForest/        # Baseline model
+│   ├── DataExtraction/      # Google Earth Engine scripts (Sentinel-2 / Landsat 8)
+│   └── Preprocessing/       # Feature engineering pipeline
+├── docs/screenshots/
+└── start.sh                 # Starts both servers with a single command
 ```
 
-## Running Locally 🚀
+---
 
-**1. Backend**
+## Dataset
+
+The XGBoost model was trained on satellite imagery sourced from **Sentinel-2** and **Landsat 8** via **Google Earth Engine**, covering Alberta wildfire seasons (May–September 2023/2024), approximately 5,000 sampled geographic points.
+
+| Feature | Description |
+|---|---|
+| NDVI | Vegetation health — low values indicate dry or stressed vegetation |
+| NBR | Burn ratio — low values suggest burn signatures or fuel accumulation |
+| NDWI | Moisture content — low values indicate dry, fire-prone conditions |
+| Temp | Surface temperature (°C) |
+| Humidity | Relative humidity (%) |
+| Wind_Spd / Wind_Dir | Wind speed (km/h) and direction (degrees) |
+| Elev / Slope | Elevation (m) and terrain slope (degrees) |
+
+Fire-risk labels were generated using a vegetation threshold rule (NDVI < 0.2 and NBR < 0.3 → high risk) in the absence of ground-truth fire perimeter data. Model accuracy: ~99% on the labeled dataset. A Random Forest baseline was trained for comparison.
+
+---
+
+## Getting Started
+
+### Requirements
+
+- Python 3.9+
+- Node.js 18+
+- [Ollama](https://ollama.com) (optional — required for AI assistant)
+
+### 1. Clone and install
+
 ```bash
-cd backend
-pip install -r requirements.txt
-python app.py          # Flask API → http://localhost:5000
+git clone https://github.com/your-username/WildfireRiskAid.git
+cd WildfireRiskAid
+
+# Backend
+cd backend && pip install -r requirements.txt && cd ..
+
+# Frontend
+cd frontend && npm install && cd ..
 ```
 
-**2. Frontend**
+### 2. Start both servers
+
 ```bash
-cd frontend
-npm install
-npm run dev            # React app → http://localhost:5173
+bash start.sh
 ```
 
-**3. Environment**
+Or manually:
 
-Create a `.env` file in `backend/` with:
+```bash
+# Terminal 1
+cd backend && python app.py        # → http://localhost:5000
+
+# Terminal 2
+cd frontend && npm run dev         # → http://localhost:5173
 ```
-DATABASE_URL=postgresql://<user>:<password>@localhost:5432/wildfire_db
+
+### 3. AI Assistant (optional)
+
+Install [Ollama](https://ollama.com), then pull the default model:
+
+```bash
+ollama pull gemma2:2b
+ollama serve
+```
+
+The app runs fully without Ollama — the AI assistant will show a fallback message if it's not running.
+
+### 4. Environment variables (optional)
+
+Create a `.env` file in `backend/` to override defaults:
+
+```env
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=gemma2:2b
 XGB_MODEL_PATH=../predictive_model/XgBoost/xgboost_wildfire_model.joblib
-GPT4ALL_MODEL=Meta-Llama-3-8B-Instruct.Q4_0.gguf
 ```
 
-PostgreSQL with the PostGIS extension must be running. The app starts without the GPT4All model present — AI features will return a fallback message until the model file is added.
+---
+
+## CSV Upload Format
+
+To use the prediction model, upload a CSV with the following columns:
+
+```
+NDVI, NBR, NDWI, Temp, Wind_Dir, Wind_Spd, Humidity, Elev, Slope
+```
+
+Optional columns for map visualization:
+
+```
+Latitude, Longitude
+```
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/zones` | Risk zones with polygon coordinates |
+| GET | `/api/alerts` | Critical and high-risk zone alerts |
+| GET | `/api/dashboard-stats` | Aggregate risk statistics |
+| GET | `/api/indices-trend?days=7\|30\|90` | NDVI/NBR/NDWI trend data |
+| GET | `/api/has-data` | Whether the database has any zone data |
+| POST | `/api/load-demo` | Load built-in seed data for demonstration |
+| POST | `/upload/csv` | Upload CSV and optionally run XGBoost predictions |
+| POST | `/api/chat` | Send a query to the local AI assistant |
