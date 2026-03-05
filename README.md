@@ -4,13 +4,9 @@ A full-stack wildfire risk assessment tool built for offline, field-deployable u
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
----
-
 ## Why This Exists
 
 Wildfire responders and field analysts often operate in areas with limited or no internet connectivity. Existing tools rely on cloud services, making them unavailable exactly when they're needed most. FireSight is designed to run entirely on local hardware — from a laptop to a Raspberry Pi — processing data and serving AI-assisted analysis without any external dependencies.
-
----
 
 ## Features
 
@@ -21,8 +17,6 @@ Wildfire responders and field analysts often operate in areas with limited or no
 - **Vegetation & Moisture Trends** — tracks NDVI, NBR, and NDWI over 7, 30, and 90-day windows.
 - **Local AI Assistant** — powered by Ollama running `gemma2:2b` (or any compatible model). Answers natural language questions about risk data and uploaded predictions. No data leaves the machine.
 - **Demo Mode** — load built-in seed data to explore the interface without a real dataset.
-
----
 
 ## Screenshots
 
@@ -35,8 +29,6 @@ Wildfire responders and field analysts often operate in areas with limited or no
 ### AI Assistant
 ![AI Assistant](docs/screenshots/chat.png)
 
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -46,8 +38,6 @@ Wildfire responders and field analysts often operate in areas with limited or no
 | ML Model | XGBoost classifier (scikit-learn pipeline) |
 | AI Assistant | Ollama (local inference, `gemma2:2b` default) |
 | Map tiles | OpenStreetMap via Leaflet |
-
----
 
 ## Project Structure
 
@@ -71,8 +61,6 @@ WildfireRiskAid/
 └── start.sh                 # Starts both servers with a single command
 ```
 
----
-
 ## Dataset
 
 The XGBoost model was trained on satellite imagery sourced from **Sentinel-2** and **Landsat 8** via **Google Earth Engine**, covering Alberta wildfire seasons (May–September 2023/2024), approximately 5,000 sampled geographic points.
@@ -88,8 +76,6 @@ The XGBoost model was trained on satellite imagery sourced from **Sentinel-2** a
 | Elev / Slope | Elevation (m) and terrain slope (degrees) |
 
 Fire-risk labels were generated using a vegetation threshold rule (NDVI < 0.2 and NBR < 0.3 → high risk) in the absence of ground-truth fire perimeter data. Model accuracy: ~99% on the labeled dataset. A Random Forest baseline was trained for comparison.
-
----
 
 ## Getting Started
 
@@ -149,8 +135,6 @@ OLLAMA_MODEL=gemma2:2b
 XGB_MODEL_PATH=../predictive_model/XgBoost/xgboost_wildfire_model.joblib
 ```
 
----
-
 ## CSV Upload Format
 
 To use the prediction model, upload a CSV with the following columns:
@@ -165,17 +149,3 @@ Optional columns for map visualization:
 Latitude, Longitude
 ```
 
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/zones` | Risk zones with polygon coordinates |
-| GET | `/api/alerts` | Critical and high-risk zone alerts |
-| GET | `/api/dashboard-stats` | Aggregate risk statistics |
-| GET | `/api/indices-trend?days=7\|30\|90` | NDVI/NBR/NDWI trend data |
-| GET | `/api/has-data` | Whether the database has any zone data |
-| POST | `/api/load-demo` | Load built-in seed data for demonstration |
-| POST | `/upload/csv` | Upload CSV and optionally run XGBoost predictions |
-| POST | `/api/chat` | Send a query to the local AI assistant |
